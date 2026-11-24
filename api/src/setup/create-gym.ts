@@ -1,4 +1,4 @@
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { normalizePhone } from '@gym/shared';
 import { z } from 'zod';
 import { hashPassword } from '../auth/passwords';
@@ -16,7 +16,7 @@ export const createGymInput = z.object({
   name: z.string().trim().min(1, 'Gym name is required.'),
   short: z.string().trim().min(1, 'Short letters are required.'),
   city: z.string().trim().min(1, 'City is required.'),
-  primaryColor: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/, 'Colour must be like #17191C.').default('#17191C'),
+  primaryColor: z.string().trim().min(1, 'App colour is required.'),
   memberPrefix: z.string().trim().min(1, 'Member prefix is required.'),
   ownerName: z.string().trim().min(1, 'Owner name is required.'),
   ownerPhone: z.string().transform((v, ctx) => {
@@ -24,15 +24,13 @@ export const createGymInput = z.object({
     if (!n) ctx.addIssue({ code: 'custom', message: 'Owner phone must be a Pakistani mobile number.' });
     return n ?? '';
   }),
-  /** If omitted, a random 10-digit password is generated and returned once. */
-  ownerPassword: z.string().min(8, 'Owner password must be at least 8 characters.').optional(),
+  ownerPassword: z.string({ error: 'Owner password is required (OWNER_PASSWORD).' }).min(1, 'Owner password is required (OWNER_PASSWORD).'),
 });
 export type CreateGymInput = z.input<typeof createGymInput>;
 
-export async function createGym(db: Database, raw: CreateGymInput): Promise<{ gymId: string; ownerId: string; ownerPassword: string }> {
+export async function createGym(db: Database, raw: CreateGymInput): Promise<{ gymId: string; ownerId: string }> {
   const input = createGymInput.parse(raw);
-  const ownerPassword = input.ownerPassword ?? randomInt(1_000_000_000, 9_999_999_999).toString();
-  const passwordHash = await hashPassword(ownerPassword);
+  const passwordHash = await hashPassword(input.ownerPassword);
   return db.transaction(async (tx) => {
     await tx.insert(gyms).values({
       id: input.id, name: input.name, short: input.short, city: input.city, primaryColor: input.primaryColor,
@@ -41,15 +39,18 @@ export async function createGym(db: Database, raw: CreateGymInput): Promise<{ gy
     const [owner] = await tx.insert(users)
       .values({ gymId: input.id, phone: input.ownerPhone, name: input.ownerName, role: 'owner', passwordHash })
       .returning({ id: users.id });
-    return { gymId: input.id, ownerId: owner!.id, ownerPassword };
+    return { gymId: input.id, ownerId: owner!.id };
   });
 }
 
-/** The demo gym of §13 ("a seed script with a demo gym"): the same names the app's demo mode shows. */
-export const DEMO_GYM: CreateGymInput = {
-  id: 'demo', name: 'Iron House Fitness (Demo)', short: 'IH', city: 'Lahore', memberPrefix: 'IH',
-  ownerName: 'Kamran Iqbal', ownerPhone: '03451234567', ownerPassword: 'demo-owner-pass',
-};
+/**
+ * The demo gym of §13 ("a seed script with a demo gym"), using the gym, owner and
+ * fee plans of the app's existing demo data. The owner password is supplied by the caller.
+ */
+export const demoGym = (ownerPassword: string): CreateGymInput => ({
+  id: 'demo', name: 'Iron House Fitness (Demo)', short: 'IH', city: 'Lahore', primaryColor: '#17191C', memberPrefix: 'IH',
+  ownerName: 'Kamran Iqbal', ownerPhone: '03451234567', ownerPassword,
+});
 
 export async function seedDemoPlans(db: Database, gymId: string) {
   await db.insert(plans).values([

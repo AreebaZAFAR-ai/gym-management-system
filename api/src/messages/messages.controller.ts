@@ -5,7 +5,7 @@ import { MessagesService } from './messages.service';
 
 /**
  * §10 Messages — reception, owner: GET whatsapp?status · PATCH whatsapp/:id ·
- * POST whatsapp/reminders · POST/DELETE announcements.
+ * POST/DELETE announcements. (POST whatsapp/reminders is pending: no reminder wording in the PDF.)
  * §10 Shared — any role: GET announcements.
  */
 @Controller()
@@ -22,13 +22,6 @@ export class MessagesController {
   @Patch('whatsapp/:id')
   setStatus(@CurrentUser() user: Principal, @Param('id') id: string, @Body() body: unknown): Promise<WhatsAppMessage> {
     return this.messages.setStatus(user, id, body);
-  }
-
-  @Roles('reception')
-  @Post('whatsapp/reminders')
-  @HttpCode(200)
-  reminders(@CurrentUser() user: Principal): Promise<{ queued: number }> {
-    return this.messages.queueReminders(user);
   }
 
   @Get('announcements')

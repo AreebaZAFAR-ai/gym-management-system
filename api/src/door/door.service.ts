@@ -20,10 +20,7 @@ import { checkins, gyms, members, users } from '../db/schema';
 import { selectMembers, toScanMember, type MemberRow } from '../members/member-view';
 
 export const DEVICE_NOT_RECOGNISED = 'Device not recognised.';
-export const UNKNOWN_FINGERPRINT = 'This fingerprint ID is not registered to a member of this gym.';
 export const ENTRY_ALLOWED = 'Entry allowed';
-/** Assumption (documented): a disabled member account is blocked at the door. */
-export const MEMBER_DISABLED = 'This member account is disabled. Please see the owner.';
 export const unknownMemberCode = (code: string) => `No member with ID ${code} at this gym.`;
 
 type DoorGym = { id: string; graceDays: number };
@@ -95,23 +92,21 @@ export class DoorService {
   /** A fingerprint ID from the gym's device: looked up only within that gym. */
   async fingerprintCheckin(gym: DoorGym, fingerprintId: string): Promise<ScanResult> {
     const [m] = await selectMembers(this.db, gym.id, eq(members.fingerprintId, fingerprintId));
-    return this.decide(gym, m, UNKNOWN_FINGERPRINT, 'fingerprint', null);
+    // Unresolved: the PDF gives no message for an unknown fingerprint ID. The scan
+    // is saved (§7 "every scan is saved") with no reason and an empty message.
+    return this.decide(gym, m, null, 'fingerprint', null);
   }
 
   private async decide(
     gym: DoorGym,
     m: MemberRow | undefined,
-    notFound: string,
+    notFound: string | null,
     source: CheckinSource,
     scannedBy: string | null,
   ): Promise<ScanResult> {
     if (!m) {
       await this.save(gym.id, null, false, notFound, source, scannedBy);
-      return { ok: false, message: notFound };
-    }
-    if (!m.active) {
-      await this.save(gym.id, m.memberId, false, MEMBER_DISABLED, source, scannedBy);
-      return { ok: false, message: MEMBER_DISABLED };
+      return { ok: false, message: notFound ?? '' };
     }
     const today = pkToday();
     const member = toScanMember(m, today);

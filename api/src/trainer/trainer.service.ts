@@ -48,7 +48,7 @@ const planItem = z
     sets: intRange(sets, `Sets must be ${sets.min} to ${sets.max}.`),
     reps: intRange(reps, `Reps must be ${reps.min} to ${reps.max}.`),
     weightMode: z.enum(['fixed', 'pct', 'choose', 'body'], { error: 'Choose a weight rule.' }),
-    kg: z.number({ error: 'Weight must be a number.' }).positive('Weight must be above zero.').nullable(),
+    kg: z.number({ error: 'Weight must be a number.' }).nullable(),
     pct: intRange(pct, `% of best must be ${pct.min} to ${pct.max}.`).nullable(),
     warmups: z.boolean({ error: '"warmups" must be true or false.' }),
     restSec: intRange(restSec, `Rest must be ${restSec.min} to ${restSec.max} seconds.`),
@@ -165,7 +165,7 @@ export class TrainerService {
       .select({ memberId: members.userId, code: members.code, name: users.name, dueOn: members.dueOn, frozenUntil: members.frozenUntil, goal: members.goal })
       .from(members)
       .innerJoin(users, and(eq(users.gymId, members.gymId), eq(users.id, members.userId)))
-      .where(and(eq(members.gymId, user.gymId), eq(users.active, true), user.role === 'owner' ? undefined : eq(members.trainerId, user.id)))
+      .where(and(eq(members.gymId, user.gymId), user.role === 'owner' ? undefined : eq(members.trainerId, user.id)))
       .orderBy(asc(users.name));
     return rows.map((r) => ({
       memberId: r.memberId, code: r.code, name: r.name, goal: r.goal,
@@ -225,12 +225,7 @@ export class TrainerService {
       throw new ForbiddenException('You can only send plans to your own clients.');
     }
 
-    const items: PlanItem[] = input.items.map((i) => ({
-      ...i,
-      // Bodyweight exercises have no weight rule (§5.2).
-      kg: i.weightMode === 'fixed' ? i.kg : null,
-      pct: i.weightMode === 'pct' ? i.pct : null,
-    }));
+    const items: PlanItem[] = input.items;
     const pctItems = items.filter((i) => i.weightMode === 'pct');
 
     // Per-member kg for "% of best", computed before the transaction opens.

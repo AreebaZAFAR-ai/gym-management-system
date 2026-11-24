@@ -4,7 +4,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { members, payments, users, whatsappMessages } from '../src/db/schema';
 import { DUPLICATE_FINGERPRINT, DUPLICATE_PHONE } from '../src/members/members.service';
-import { correctionSaved, MEMBER_NOT_FOUND, ONLY_ORIGINAL, PAYMENT_NOT_FOUND, SAME_MEMBER } from '../src/payments/payments.service';
+import { MEMBER_NOT_FOUND } from '../src/payments/payments.service';
 import { closeTestApp, createTestApp, type TestContext } from './helpers/app';
 import { registerMember } from './helpers/seed';
 import { login, seedGym, type GymFixture } from './helpers/staff';
@@ -62,14 +62,11 @@ describe('member registration and membership payments', () => {
       expect(m).toMatchObject({ code: 'IH-0001', dueOn: due, joinedOn: today, planId: a.planId, trainerId: a.trainer.id, goal: 'strength', gender: 'male' });
     });
 
-    it('queues the welcome WhatsApp (ID and temporary password) and the payment receipt', async () => {
+    it('§7: saving the registration payment queues the WhatsApp receipt (welcome message pending: no wording in the PDF)', async () => {
       const msgs = await ctx.db.select().from(whatsappMessages).where(eq(whatsappMessages.memberId, reg.body.memberId));
-      const welcome = msgs.find((x) => x.kind === 'welcome');
-      const receipt = msgs.find((x) => x.kind === 'receipt');
-      expect(welcome).toMatchObject({ status: 'queued', toPhone: '3001234567' });
-      expect(welcome!.body).toContain('IH-0001');
-      expect(welcome!.body).toContain('234567');
-      expect(welcome!.body).toContain('change your password');
+      expect(msgs.map((x) => x.kind)).toEqual(['receipt']);
+      const receipt = msgs[0];
+      expect(receipt).toMatchObject({ status: 'queued', toPhone: '3001234567' });
       expect(receipt!.body).toBe(
         `Assalam o Alaikum Ali, we received PKR 4,000 by JazzCash at Iron House Fitness. Your membership is paid till ${formatShortDate(addMonths(today, 1))}. Thank you!`,
       );
@@ -123,7 +120,6 @@ describe('member registration and membership payments', () => {
         [{ name: '  ' }, 'Enter the member’s name.'],
         [{ joinedOn: '2026-02-30' }, 'Enter the joining date.'],
         [{ planId: 'x' }, 'Choose a fee plan.'],
-        [{ payment: { amountPkr: 0, method: 'cash' } }, 'Enter an amount above zero.'],
         [{ payment: { amountPkr: 4000, method: 'card' } }, 'Choose a payment method.'],
       ];
       for (const [over, message] of cases) {
@@ -196,7 +192,7 @@ describe('member registration and membership payments', () => {
 
     it('validates the payment', async () => {
       for (const [body, message] of [
-        [{ memberCode: 'IH-0901', amountPkr: -5, method: 'cash' }, 'Enter an amount above zero.'],
+        [{ memberCode: 'IH-0901', amountPkr: 10.5, method: 'cash' }, 'Enter the amount in whole rupees.'],
         [{ memberCode: 'IH-0901', amountPkr: 4000, method: 'card' }, 'Choose a payment method.'],
         [{ amountPkr: 4000, method: 'cash' }, 'Enter the member ID.'],
       ] as const) {
@@ -206,69 +202,6 @@ describe('member registration and membership payments', () => {
       }
     });
 
-    describe('Corrected Payments (documented defaults)', () => {
-      let originalId: string;
-      let memberId: string;
-      let dueBefore: string;
-
-      beforeAll(async () => {
-        ({ memberId } = await fixture('IH-0950', '3009500000', addDays(today, 10)));
-        const res = await as(receptionA).post('/v1/payments', { memberCode: 'IH-0950', amountPkr: 40000, method: 'easypaisa', txnId: 'EP-1' });
-        originalId = res.body.payment.id;
-        dueBefore = res.body.newDueOn;
-      });
-
-      it('is a separate row linked to the original; the original is unchanged and the due date does not move', async () => {
-        const res = await as(ownerA).post('/v1/payments', {
-          memberCode: 'IH-0950', amountPkr: 4000, method: 'jazzcash', txnId: 'JC-7', correctsPaymentId: originalId,
-        });
-        expect(res.status).toBe(201);
-        expect(res.body.message).toBe(correctionSaved);
-        expect(res.body.newDueOn).toBe(dueBefore);
-        const [orig] = await ctx.db.select().from(payments).where(eq(payments.id, originalId));
-        expect(res.body.payment).toMatchObject({
-          correctsPaymentId: originalId, amountPkr: 4000, method: 'jazzcash', txnId: 'JC-7', recordedBy: a.owner.id,
-          periodFrom: orig!.periodFrom, periodTo: orig!.periodTo,
-        });
-        expect(orig).toMatchObject({ amountPkr: 40000, method: 'easypaisa', correctsPaymentId: null });
-        const [m] = await ctx.db.select().from(members).where(eq(members.userId, memberId));
-        expect(m!.dueOn).toBe(dueBefore);
-        const receipts = await ctx.db.select().from(whatsappMessages)
-          .where(and(eq(whatsappMessages.memberId, memberId), eq(whatsappMessages.kind, 'receipt')));
-        expect(receipts).toHaveLength(1); // the original payment's receipt; none for the correction (fixture registration queues none)
-      });
-
-      it('an original may be corrected more than once; every correction links to the original', async () => {
-        const res = await as(receptionA).post('/v1/payments', { memberCode: 'IH-0950', amountPkr: 4100, method: 'jazzcash', correctsPaymentId: originalId });
-        expect(res.status).toBe(201);
-        const history = await as(receptionA).get('/v1/payments?member=IH-0950');
-        expect(history.body.filter((p: { correctsPaymentId: string | null }) => p.correctsPaymentId === originalId)).toHaveLength(2);
-      });
-
-      it('a correction cannot itself be corrected', async () => {
-        const [c] = await ctx.db.select().from(payments).where(eq(payments.correctsPaymentId, originalId)).limit(1);
-        const res = await as(receptionA).post('/v1/payments', { memberCode: 'IH-0950', amountPkr: 4000, method: 'cash', correctsPaymentId: c!.id });
-        expect(res.status).toBe(400);
-        expect(res.body).toEqual({ message: ONLY_ORIGINAL });
-      });
-
-      it('must be for the same member', async () => {
-        const res = await as(receptionA).post('/v1/payments', { memberCode: 'IH-0901', amountPkr: 4000, method: 'cash', correctsPaymentId: originalId });
-        expect(res.status).toBe(400);
-        expect(res.body).toEqual({ message: SAME_MEMBER });
-      });
-
-      it("§11: cannot correct another gym's payment", async () => {
-        const res = await as(receptionB).post('/v1/payments', { memberCode: 'IH-0950', amountPkr: 4000, method: 'cash', correctsPaymentId: originalId });
-        expect(res.status).toBe(404);
-        expect(res.body).toEqual({ message: PAYMENT_NOT_FOUND });
-      });
-
-      it('payments stay append-only: original and both corrections are all kept', async () => {
-        const rows = await ctx.db.select().from(payments).where(eq(payments.memberId, memberId));
-        expect(rows).toHaveLength(4); // registration, original, 2 corrections
-      });
-    });
   });
 
   describe('GET /v1/payments?from&to&member', () => {

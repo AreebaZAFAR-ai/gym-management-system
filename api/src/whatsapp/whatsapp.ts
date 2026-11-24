@@ -18,16 +18,6 @@ export function toWhatsAppMessage(m: typeof whatsappMessages.$inferSelect, membe
   };
 }
 
-/**
- * §7 WhatsApp log: fee reminder. The PDF gives no wording; this placeholder
- * names the amount, the due date and where to pay.
- */
-export function reminderText(memberName: string, gymName: string, feePkr: number, dueOn: string, today: string): string {
-  const first = memberName.trim().split(/\s+/)[0] ?? memberName;
-  const when = dueOn < today ? `was due on ${formatShortDate(dueOn)}` : `is due on ${formatShortDate(dueOn)}`;
-  return `Assalam o Alaikum ${first}, your ${gymName} membership fee of ${formatPKR(feePkr)} ${when}. Please pay at reception or send it from the app. Thank you!`;
-}
-
 /** A database or an open transaction. */
 export type Executor = Pick<Database, 'insert' | 'select' | 'update'>;
 
@@ -42,19 +32,6 @@ export function receiptText(memberName: string, amountPkr: number, method: Payme
   return (
     `Assalam o Alaikum ${first}, we received ${formatPKR(amountPkr)} by ${PAYMENT_METHOD_LABELS[method]} at ${gymName}. ` +
     `Your membership is paid till ${formatShortDate(paidTill)}. Thank you!`
-  );
-}
-
-/**
- * §7 Registration: the default password is "sent in the welcome WhatsApp with a
- * request to change it". The PDF gives no exact wording; this text is a placeholder
- * that carries exactly those items.
- */
-export function welcomeText(memberName: string, gymName: string, memberCode: string, password: string): string {
-  const first = memberName.trim().split(/\s+/)[0] ?? memberName;
-  return (
-    `Assalam o Alaikum ${first}, welcome to ${gymName}! Your member ID is ${memberCode}. ` +
-    `Log in to the app with your mobile number and password ${password}, then please change your password.`
   );
 }
 

@@ -4,16 +4,17 @@ import { Pool } from 'pg';
 import { loadDotEnv } from '../config/env';
 import type { Database } from '../db/db.module';
 import * as schema from '../db/schema';
-import { createGym, createGymInput, DEMO_GYM, seedDemoPlans } from '../setup/create-gym';
+import { createGym, createGymInput, demoGym, seedDemoPlans } from '../setup/create-gym';
+
+const USAGE =
+  'Usage: OWNER_PASSWORD=<password> npm --workspace api run gym:create -- --id <slug> --name <name> --short <letters> ' +
+  '--city <city> --color <app colour> --prefix <member prefix> --owner-name <name> --owner-phone <mobile>\n' +
+  '       OWNER_PASSWORD=<password> npm --workspace api run gym:demo';
 
 /**
- * Super-admin script (§2, §12). Uses DATABASE_URL_DIRECT from api/.env.
- *
- *   npm --workspace api run gym:create -- --id ironhouse --name "Iron House Fitness" --short IH \
- *     --city Lahore --prefix IH --owner-name "Kamran Iqbal" --owner-phone 03451234567 [--color #17191C]
- *   npm --workspace api run gym:demo        (the §13 demo gym "demo" with three fee plans)
- *
- * Prints the owner's password once (generated if not given). The check-in secret is never printed.
+ * Super-admin script (§2, §12 step 1). Uses DATABASE_URL_DIRECT from api/.env.
+ * The owner password comes from OWNER_PASSWORD and is never printed; nor is the
+ * check-in secret. `--demo` creates the §13 demo gym "demo" with three fee plans.
  */
 async function main() {
   loadDotEnv();
@@ -27,20 +28,17 @@ async function main() {
     return i >= 0 ? args[i + 1] : undefined;
   };
   if (!demo && !arg('id')) {
-    console.error(
-      'Usage: npm --workspace api run gym:create -- --id <slug> --name <name> --short <letters> --city <city> ' +
-        '--prefix <member prefix> --owner-name <name> --owner-phone <mobile> [--color #17191C]\n' +
-        '       npm --workspace api run gym:demo',
-    );
+    console.error(USAGE);
     process.exit(2);
   }
   const input = demo
-    ? DEMO_GYM
-    : createGymInput.parse({
-        id: arg('id'), name: arg('name'), short: arg('short'), city: arg('city'), primaryColor: arg('color'),
-        memberPrefix: arg('prefix'), ownerName: arg('owner-name'), ownerPhone: arg('owner-phone') ?? '',
-        ownerPassword: process.env.OWNER_PASSWORD,
-      });
+    ? demoGym(process.env.OWNER_PASSWORD ?? '')
+    : {
+        id: arg('id') ?? '', name: arg('name') ?? '', short: arg('short') ?? '', city: arg('city') ?? '',
+        primaryColor: arg('color') ?? '', memberPrefix: arg('prefix') ?? '', ownerName: arg('owner-name') ?? '',
+        ownerPhone: arg('owner-phone') ?? '', ownerPassword: process.env.OWNER_PASSWORD ?? '',
+      };
+  createGymInput.parse(input); // report every problem before connecting
 
   const pool = new Pool({ connectionString: url, max: 1 });
   try {
@@ -48,8 +46,6 @@ async function main() {
     const result = await createGym(db, input);
     if (demo) await seedDemoPlans(db, result.gymId);
     console.log(`Created gym "${result.gymId}" and its owner.`);
-    console.log(`Owner login: gym ${result.gymId}, phone ${input.ownerPhone}, password ${result.ownerPassword}`);
-    console.log('Ask the owner to change this password after the first login.');
   } finally {
     await pool.end();
   }

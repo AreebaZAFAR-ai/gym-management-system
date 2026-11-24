@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { checkins, gyms, plans, users } from '../src/db/schema';
-import { DEVICE_NOT_RECOGNISED, ENTRY_ALLOWED, UNKNOWN_FINGERPRINT } from '../src/door/door.service';
+import { DEVICE_NOT_RECOGNISED, ENTRY_ALLOWED } from '../src/door/door.service';
 import { closeTestApp, createTestApp, type TestContext } from './helpers/app';
 import { registerMember } from './helpers/seed';
 
@@ -89,14 +89,14 @@ describe('demo fingerprint device (§7 entry at the door, §10 device endpoint)'
     });
   });
 
-  it('saves a scan for an unknown fingerprint ID with no member', async () => {
+  it('§7: saves the scan of an unknown fingerprint ID with no member (message unspecified in the PDF)', async () => {
     const before = (await checkinsOf('gym-a')).length;
     const res = await scan('gym-a', KEY_A, { fingerprintId: '999' });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: false, message: UNKNOWN_FINGERPRINT });
+    expect(res.body).toEqual({ ok: false, message: '' });
     const after = await checkinsOf('gym-a');
     expect(after).toHaveLength(before + 1);
-    expect(after.find((c) => c.reason === UNKNOWN_FINGERPRINT)).toMatchObject({ memberId: null, allowed: false, source: 'fingerprint' });
+    expect(after.filter((c) => c.memberId === null)).toEqual([expect.objectContaining({ allowed: false, source: 'fingerprint', reason: null })]);
   });
 
   describe('gym isolation', () => {

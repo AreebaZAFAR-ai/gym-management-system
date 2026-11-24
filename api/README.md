@@ -4,7 +4,7 @@ One backend for every gym (spec §8–10). NestJS 11, Zod, Drizzle ORM,
 PostgreSQL on Neon. Business rules come from `../shared`; do not reimplement
 them here.
 
-Status: **all §10 routes implemented and tested; database migrated on Neon.**
+Status: **§10 routes implemented and tested, except the pending items below; database migrated on Neon.**
 
 ## Routes
 
@@ -22,31 +22,30 @@ The owner may call every staff route; members get 403 on staff routes.
 | Shared | `GET announcements` · `GET exercises` | Any |
 | Door | `POST checkins/scan {code}` · `GET checkins?date=` | Reception, owner |
 | Door | `POST devices/:gymId/fingerprint {fingerprintId}`, header `x-device-key` | Door device |
-| Fees | `POST payments` (renewal, or a Corrected Payment with `correctsPaymentId`) · `GET payments?from&to&member` | Reception, owner |
+| Fees | `POST payments` · `GET payments?from&to&member` | Reception, owner |
 | Approvals | `GET payment-proofs` · `POST payment-proofs/:id/approve\|reject` · `GET freeze-requests` · `POST freeze-requests/:id/approve\|reject` | Reception, owner |
 | Files | `GET files/proofs/:id?exp&sig` (15-minute signed link) | Signed link |
-| Members | `GET members?q&status` · `POST members` · `GET/PATCH members/:code` · `POST members/:code/reset-password` | Reception, owner (due-date edit: owner) |
+| Members | `GET members?q&status` · `POST members` · `GET/PATCH members/:code` | Reception, owner (due-date edit: owner) |
 | Dashboard | `GET dashboard` | Reception, owner |
-| Messages | `GET whatsapp?status` · `PATCH whatsapp/:id` · `POST whatsapp/reminders` · `POST/DELETE announcements` | Reception, owner |
+| Messages | `GET whatsapp?status` · `PATCH whatsapp/:id` · `POST/DELETE announcements` | Reception, owner |
 | Setup | `GET plans` | Reception, owner |
 | Setup | `POST/PATCH plans` · `GET/POST/PATCH staff` · `GET/PATCH settings` · `GET reports` | Owner |
 | Trainer | `GET trainer/today` · `trainer/clients` · `trainer/clients/:id/bests` · `trainer/plans` · `PATCH trainer/sessions/:id` · `POST trainer/plans` · `DELETE trainer/plans/:id` | Trainer, owner |
 | Trainer | `POST trainer/sessions` (path provisional: not listed in §10) | Trainer, owner |
 
-### Defaults chosen where the PDF is silent (change on request)
+### Pending: the PDF does not say how these work
 
-- **Corrected payments:** a new row linked to the original (`correctsPaymentId`);
-  same member only; an original may be corrected more than once (the latest
-  correction counts in totals); a correction cannot itself be corrected; it keeps
-  the original's period, does **not** move the due date and queues no receipt.
-- **Disabled accounts:** cannot log in; existing tokens stop working; disabled
-  members are blocked at the door (QR, typed ID, thumbprint) and the scan is saved.
-- **Reset password:** 6 random digits (not the predictable last-6-digits default).
-- **Unknown fingerprint / disabled member / welcome and reminder WhatsApp texts:**
-  wording is ours; the PDF gives none.
-- **Owners** cannot disable themselves (§6) or change their own role.
-- **"Active members"** (dashboard, announcement WhatsApp copies): enabled accounts
-  that are not overdue.
+Not implemented until the requirement is clarified:
+
+- `POST members/:code/reset-password`: what the new password is.
+- `POST whatsapp/reminders` and the welcome WhatsApp at registration: the message wording.
+- Recording a payment correction through the API: how a correction is entered and whether it
+  changes the due date or queues a receipt. (The database already links a correction to its
+  original payment and keeps payments append-only.)
+- What disabling an account does. `active` is stored and editable (§6 Disable/Enable) but has
+  no other effect.
+- The message for an unknown thumbprint ID (the scan is saved with no reason and the
+  response message is empty).
 
 ## Run locally
 
@@ -64,14 +63,14 @@ curl http://localhost:3000/health
 ## Adding a gym (§12 step 1, super admin)
 
 ```bash
-npm --workspace api run gym:create -- --id ironhouse --name "Iron House Fitness" --short IH \
-  --city Lahore --prefix IH --owner-name "Kamran Iqbal" --owner-phone 03451234567
-npm --workspace api run gym:demo   # §13 demo gym "demo" with three fee plans
+OWNER_PASSWORD=<password> npm --workspace api run gym:create -- --id ironhouse --name "Iron House Fitness" \
+  --short IH --city Lahore --color "#17191C" --prefix IH --owner-name "<name>" --owner-phone <mobile>
+OWNER_PASSWORD=<password> npm --workspace api run gym:demo   # §13 demo gym "demo" with three fee plans
 ```
 
-Creates the gym with a random check-in secret and its first owner, and prints
-the owner's password once (set `OWNER_PASSWORD` to choose it). The gym ID must
-match the app's brand file (`app/brands/<gym>.json`).
+Creates the gym with a random check-in secret (§12) and its first owner with the
+given password. Neither is printed. The gym ID must match the app's brand file
+(`app/brands/<gym>.json`).
 
 ## Environment (`api/.env`)
 
@@ -93,8 +92,8 @@ S3-compatible storage is **not wired up yet**.
 
 - Schema: `src/db/schema.ts`. Migrations: `drizzle/` (SQL, committed).
   `0001_integrity_rules.sql` holds the rules Drizzle cannot express (append-only
-  payments, registration needs a payment, exercise name rules, gym isolation
-  for workouts); `0002_builtin_exercises.sql` installs the 17 built-in exercises.
+  payments; from your clarifications: registration needs a payment and exercise
+  names are unique per gym; gym isolation for workouts); `0002_builtin_exercises.sql` installs the 17 built-in exercises.
 - `npm --workspace api run db:generate` writes a new SQL migration. **Read it
   before applying**; it must never contain `DROP` or data-destroying changes.
 - `npm --workspace api run db:migrate` applies pending migrations (direct connection).

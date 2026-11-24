@@ -1,4 +1,3 @@
-import { randomInt } from 'node:crypto';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   addDays,
@@ -10,7 +9,6 @@ import {
   type MemberDetail,
   type MemberListItem,
   type RegisterMemberResponse,
-  type ResetPasswordResponse,
 } from '@gym/shared';
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -22,7 +20,7 @@ import { DB, type Database } from '../db/db.module';
 import { checkins, dueDateChanges, gyms, members, payments, plans, users, whatsappMessages } from '../db/schema';
 import { toLogItem } from '../door/door.service';
 import { amountPkr, paymentMethod, toPayment } from '../payments/payments.service';
-import { queueWhatsapp, receiptText, toWhatsAppMessage, welcomeText, type Executor } from '../whatsapp/whatsapp';
+import { queueWhatsapp, receiptText, toWhatsAppMessage, type Executor } from '../whatsapp/whatsapp';
 import { selectMembers, toListItem, type MemberRow } from './member-view';
 
 export const DUPLICATE_PHONE = 'This mobile number is already registered.';
@@ -143,25 +141,14 @@ export class MembersService {
   }
 
   /**
-   * POST members/:code/reset-password (§6 "Reset password (shows the new one)").
-   * Assumption (documented): the new password is 6 random digits, not the
-   * predictable last-6-digits default.
-   */
-  async resetPassword(staff: Principal, code: string): Promise<ResetPasswordResponse> {
-    const m = await this.find(this.db, staff.gymId, code);
-    const temporaryPassword = randomInt(0, 1_000_000).toString().padStart(6, '0');
-    await this.db.update(users).set({ passwordHash: await hashPassword(temporaryPassword), updatedAt: new Date() })
-      .where(and(eq(users.gymId, staff.gymId), eq(users.id, m.memberId)));
-    return { temporaryPassword };
-  }
-
-  /**
    * POST members (§6 Add member, §7 Registration). Reception or owner.
    * - Member ID = gym prefix + running number, never reused.
    * - One account per mobile number per gym.
    * - Default password = last 6 digits of the mobile number, returned once.
    * - The first payment starts on the payment date (today) and runs the plan's months.
-   * - Queues the welcome WhatsApp and, because a payment is saved, the receipt.
+   * - Saving the payment queues the WhatsApp receipt (§7).
+   * Unresolved: §6/§7 also require a welcome WhatsApp, but the PDF gives no wording,
+   * so it is not queued yet.
    */
   async register(staff: Principal, body: unknown): Promise<RegisterMemberResponse> {
     const input = parse(registerBody, body);
@@ -202,10 +189,6 @@ export class MembersService {
           .returning();
 
         await queueWhatsapp(tx, {
-          gymId: staff.gymId, memberId, toPhone: input.phone, kind: 'welcome',
-          body: welcomeText(input.name, gym!.name, code, temporaryPassword),
-        });
-        await queueWhatsapp(tx, {
           gymId: staff.gymId, memberId, toPhone: input.phone, kind: 'receipt',
           body: receiptText(input.name, input.payment.amountPkr, input.payment.method, gym!.name, periodTo),
         });
@@ -239,7 +222,7 @@ export class MembersService {
 
   private async assertTrainer(db: Executor, gymId: string, trainerId: string) {
     const [t] = await db.select({ id: users.id }).from(users)
-      .where(and(eq(users.gymId, gymId), eq(users.id, trainerId), eq(users.role, 'trainer')));
+      .where(and(eq(users.gymId, gymId), eq(users.id, trainerId)));
     if (!t) throw new BadRequestException('Trainer not found.');
   }
 

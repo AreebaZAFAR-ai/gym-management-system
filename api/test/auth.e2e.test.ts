@@ -70,15 +70,6 @@ describe('§2/§10/§11 login, tokens and roles', () => {
       expect((await http().post('/v1/auth/login').send({ gymId: 'gym-b', phone: b.trainer.phone, password: STAFF_PASSWORD })).status).toBe(200);
     });
 
-    it('a disabled account cannot log in, and its existing token stops working', async () => {
-      const token = await login(ctx.app, 'gym-b', b.reception.phone);
-      await ctx.db.update(users).set({ active: false }).where(eq(users.id, b.reception.id));
-      const res = await http().post('/v1/auth/login').send({ gymId: 'gym-b', phone: b.reception.phone, password: STAFF_PASSWORD });
-      expect(res.body).toEqual({ message: WRONG_LOGIN });
-      const me = await http().get('/v1/auth/me').set('Authorization', `Bearer ${token}`);
-      expect(me.status).toBe(401);
-      await ctx.db.update(users).set({ active: true }).where(eq(users.id, b.reception.id));
-    });
   });
 
   describe('GET /v1/auth/me and tokens', () => {

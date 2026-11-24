@@ -49,12 +49,13 @@ export const NO_HISTORY_NOTE = 'No history yet for this exercise, so choose a we
 export const IMAGE_TOO_LARGE = 'The screenshot must be 6 MB or smaller.';
 export const NOT_AN_IMAGE = 'Upload an image (JPG, PNG, WebP or HEIC).';
 
+/** §9 sets JSON: kg, reps, warmup, plates, blocks. */
 const setEntry = z.object({
-  kg: z.number({ error: 'Each set needs a weight.' }).min(0).max(1000),
-  reps: z.number({ error: 'Each set needs reps.' }).int().min(0).max(1000),
-  warmup: z.boolean(),
-  plates: z.array(z.number().positive()).max(30).optional(),
-  blocks: z.array(z.number().positive()).max(50).optional(),
+  kg: z.number({ error: 'Each set needs a weight.' }),
+  reps: z.number({ error: 'Each set needs reps.' }),
+  warmup: z.boolean({ error: 'Each set needs "warmup".' }),
+  plates: z.array(z.number()).optional(),
+  blocks: z.array(z.number()).optional(),
 });
 const sessionsBody = z.object({
   sessions: z
@@ -63,12 +64,11 @@ const sessionsBody = z.object({
         id: z.string().uuid('Each session needs an ID created on the phone.'),
         exerciseId: z.string().min(1),
         date: isoDate('Each session needs a date.'),
-        sets: z.array(setEntry).min(1, 'Each session needs at least one set.').max(100),
-        planId: z.string().uuid().nullish(),
+        sets: z.array(setEntry, { error: 'Each session needs its sets.' }),
+        planId: z.string().uuid('Plan not found.').nullish(),
       }),
       { error: 'Send a list of sessions.' },
-    )
-    .max(200, 'Send at most 200 sessions at a time.'),
+    ),
 });
 const freezeBody = z.object({
   days: z.number({ error: 'A freeze must be 3 to 15 days.' }),
@@ -262,8 +262,7 @@ export class MeService {
   /**
    * POST me/sessions {sessions} (§7 Workouts): each finished exercise with an ID
    * the phone created; IDs already stored are ignored, so offline retries never
-   * create duplicates. A planId that is not one of the member's plans is stored
-   * as null rather than rejecting the queue (documented assumption).
+   * create duplicates.
    */
   async saveSessions(user: Principal, body: unknown): Promise<SaveSessionsResponse> {
     const { sessions } = parse(sessionsBody, body);
@@ -277,16 +276,17 @@ export class MeService {
     if (unknown) throw new BadRequestException(`Unknown exercise: ${unknown}.`);
 
     const planIds = [...new Set(sessions.map((s) => s.planId).filter((p): p is string => Boolean(p)))];
-    const myPlans = planIds.length
-      ? new Set((await this.db.select({ planId: planAssignments.planId }).from(planAssignments)
-          .where(and(eq(planAssignments.gymId, user.gymId), eq(planAssignments.memberId, user.id), inArray(planAssignments.planId, planIds)))).map((p) => p.planId))
-      : new Set<string>();
+    if (planIds.length) {
+      const found = await this.db.select({ id: trainerPlans.id }).from(trainerPlans)
+        .where(and(eq(trainerPlans.gymId, user.gymId), inArray(trainerPlans.id, planIds)));
+      if (found.length !== planIds.length) throw new BadRequestException('Plan not found.');
+    }
 
     const inserted = await this.db
       .insert(exerciseSessions)
       .values(sessions.map((s) => ({
         id: s.id, gymId: user.gymId, memberId: user.id, exerciseId: s.exerciseId, date: s.date,
-        sets: s.sets as SetEntry[], planId: s.planId && myPlans.has(s.planId) ? s.planId : null,
+        sets: s.sets as SetEntry[], planId: s.planId ?? null,
       })))
       .onConflictDoNothing({ target: exerciseSessions.id })
       .returning({ id: exerciseSessions.id });

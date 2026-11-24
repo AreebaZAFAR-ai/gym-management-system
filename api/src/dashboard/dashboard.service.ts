@@ -1,20 +1,17 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { addDays, addMonths, daysBetween, DUE_SOON_DAYS, pkToday, type DashboardSummary, type PaymentMethod, type ReportsSummary } from '@gym/shared';
+import { addDays, addMonths, DUE_SOON_DAYS, pkToday, type DashboardSummary, type PaymentMethod, type ReportsSummary } from '@gym/shared';
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
 import type { Principal } from '../auth/auth.decorators';
 import { pkDayStart } from '../common/db-errors';
 import { DB, type Database } from '../db/db.module';
 import { checkins, freezeRequests, members, paymentProofs } from '../db/schema';
-import { isActiveMember, selectMembers, toListItem } from '../members/member-view';
-import { effectivePayments } from '../payments/payments.service';
+import { selectMembers, toListItem } from '../members/member-view';
+import { paymentsBetween } from '../payments/payments.service';
 
 const PK = sql.raw(`'Asia/Karachi'`);
 const METHODS: PaymentMethod[] = ['cash', 'jazzcash', 'easypaisa', 'bank'];
 
-/**
- * §6 Overview and Reports. Money totals count each payment once, using its
- * latest correction (corrections never double-count).
- */
+/** §6 Overview and Reports. */
 @Injectable()
 export class DashboardService {
   constructor(@Inject(DB) private readonly db: Database) {}
@@ -24,24 +21,25 @@ export class DashboardService {
     const today = pkToday();
     const monthStart = `${today.slice(0, 7)}-01`;
     const list = (await selectMembers(this.db, staff.gymId)).map((m) => toListItem(m, today));
-    const enabled = list.filter((m) => m.active);
-    const overdue = enabled.filter((m) => m.status === 'overdue').sort((a, b) => a.dueOn.localeCompare(b.dueOn));
-    const dueSoon = enabled
-      .filter((m) => m.dueOn >= today && daysBetween(today, m.dueOn) <= DUE_SOON_DAYS && m.status !== 'frozen')
+    // §6 lists: "overdue, and due in the next 5 days".
+    const overdue = list.filter((m) => m.status === 'overdue').sort((a, b) => a.dueOn.localeCompare(b.dueOn));
+    const dueSoon = list
+      .filter((m) => m.dueOn >= today && m.dueOn <= addDays(today, DUE_SOON_DAYS))
       .sort((a, b) => a.dueOn.localeCompare(b.dueOn));
 
     const [joined] = await this.db.select({ n: sql<number>`count(*)::int` }).from(members)
       .where(and(eq(members.gymId, staff.gymId), gte(members.joinedOn, monthStart)));
     const [todayCheckins] = await this.db.select({ n: sql<number>`count(*)::int` }).from(checkins)
-      .where(and(eq(checkins.gymId, staff.gymId), eq(checkins.allowed, true), gte(checkins.createdAt, pkDayStart(today)), lt(checkins.createdAt, pkDayStart(addDays(today, 1)))));
+      .where(and(eq(checkins.gymId, staff.gymId), gte(checkins.createdAt, pkDayStart(today)), lt(checkins.createdAt, pkDayStart(addDays(today, 1)))));
     const [proofs] = await this.db.select({ n: sql<number>`count(*)::int` }).from(paymentProofs)
       .where(and(eq(paymentProofs.gymId, staff.gymId), eq(paymentProofs.status, 'pending')));
     const [freezes] = await this.db.select({ n: sql<number>`count(*)::int` }).from(freezeRequests)
       .where(and(eq(freezeRequests.gymId, staff.gymId), eq(freezeRequests.status, 'pending')));
-    const fees = await effectivePayments(this.db, staff.gymId, pkDayStart(monthStart), pkDayStart(addMonths(monthStart, 1)));
+    const fees = await paymentsBetween(this.db, staff.gymId, pkDayStart(monthStart), pkDayStart(addMonths(monthStart, 1)));
 
     return {
-      activeMembers: list.filter(isActiveMember).length,
+      // §6 "Active members", counted by the §7 status "Active".
+      activeMembers: list.filter((m) => m.status === 'active').length,
       joinedThisMonth: Number(joined?.n ?? 0),
       checkinsToday: Number(todayCheckins?.n ?? 0),
       feesThisMonthPkr: fees.reduce((s, p) => s + p.amountPkr, 0),
@@ -61,7 +59,7 @@ export class DashboardService {
     const monthStart = `${today.slice(0, 7)}-01`;
     const sixMonthsStart = addMonths(monthStart, -5);
 
-    const fees = await effectivePayments(this.db, staff.gymId, pkDayStart(sixMonthsStart), pkDayStart(addMonths(monthStart, 1)));
+    const fees = await paymentsBetween(this.db, staff.gymId, pkDayStart(sixMonthsStart), pkDayStart(addMonths(monthStart, 1)));
     const pkMonth = (d: Date) => new Date(d.getTime() + 5 * 3600_000).toISOString().slice(0, 7);
     const feesByMonth = Array.from({ length: 6 }, (_, i) => addMonths(sixMonthsStart, i).slice(0, 7)).map((month) => ({
       month,
@@ -73,9 +71,9 @@ export class DashboardService {
       totalPkr: thisMonth.filter((p) => p.method === method).reduce((s, p) => s + p.amountPkr, 0),
     }));
 
-    // Allowed check-ins in the last 30 days (Pakistan time).
+    // Check-ins in the last 30 days (Pakistan time); §7: every scan is saved as a check-in.
     const since = pkDayStart(addDays(today, -29));
-    const where = and(eq(checkins.gymId, staff.gymId), eq(checkins.allowed, true), gte(checkins.createdAt, since));
+    const where = and(eq(checkins.gymId, staff.gymId), gte(checkins.createdAt, since));
     const byHour = await this.db
       .select({ hour: sql<number>`extract(hour from ${checkins.createdAt} at time zone ${PK})::int`, n: sql<number>`count(*)::int` })
       .from(checkins).where(where).groupBy(sql`1`);
@@ -85,7 +83,7 @@ export class DashboardService {
     const hourMap = new Map(byHour.map((r) => [Number(r.hour), Number(r.n)]));
     const dayMap = new Map(byDay.map((r) => [r.day, Number(r.n)]));
 
-    // "Might quit": paid-up members with no visit in 14 days.
+    // "Might quit": paid-up members (due date not passed) with no visit (allowed entry) in 14 days.
     const recent = await this.db
       .selectDistinct({ memberId: checkins.memberId })
       .from(checkins)
@@ -93,7 +91,7 @@ export class DashboardService {
     const visited = new Set(recent.map((r) => r.memberId));
     const mightQuit = (await selectMembers(this.db, staff.gymId))
       .map((m) => toListItem(m, today))
-      .filter((m) => m.active && (m.status === 'active' || m.status === 'due_soon') && !visited.has(m.memberId))
+      .filter((m) => m.dueOn >= today && !visited.has(m.memberId))
       .sort((a, b) => a.name.localeCompare(b.name));
 
     return {

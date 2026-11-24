@@ -98,9 +98,3 @@ export function toScanMember(m: MemberRow, today: string): ScanMember {
     status: membershipStatus(m.dueOn, m.frozenUntil, today),
   };
 }
-
-/**
- * "Active" members for the dashboard and announcement copies: enabled accounts
- * that are paid up or frozen (status active, due soon or frozen; not overdue).
- */
-export const isActiveMember = (m: MemberListItem) => m.active && m.status !== 'overdue';

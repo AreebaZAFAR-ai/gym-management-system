@@ -3,8 +3,8 @@ import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ALREADY_HANDLED } from '../src/approvals/approvals.service';
-import { MEMBER_DISABLED } from '../src/door/door.service';
-import { checkins, dueDateChanges, gyms, members, payments, whatsappMessages } from '../src/db/schema';
+import { hashPassword } from '../src/auth/passwords';
+import { checkins, dueDateChanges, gyms, members, payments, users } from '../src/db/schema';
 import { CANNOT_DISABLE_SELF } from '../src/setup/setup.service';
 import { OWNER_ONLY_DUE_DATE } from '../src/members/members.service';
 import { closeTestApp, createTestApp, type TestContext } from './helpers/app';
@@ -26,13 +26,13 @@ describe('staff routes: door, approvals, members, dashboard, messages, setup', (
     patch: (p: string, body: object) => http().patch(p).set('Authorization', `Bearer ${token}`).send(body),
     del: (p: string) => http().delete(p).set('Authorization', `Bearer ${token}`),
   });
-  /** Registers a member and returns a logged-in member token. */
+  /** Registers a member (test fixture) and returns a logged-in member token. */
   const member = async (code: string, phone: string, dueOn: string, extra: Partial<typeof members.$inferInsert> = {}) => {
     const { memberId } = await registerMember(ctx.db, {
       gymId: 'gym-a', phone, code, planId: a.planId, recordedBy: a.reception.id, joinedOn: addDays(today, -60), dueOn, member: extra,
     });
-    const reset = await as(t.reception).post(`/v1/members/${code}/reset-password`);
-    const token = (await http().post('/v1/auth/login').send({ gymId: 'gym-a', phone, password: reset.body.temporaryPassword })).body.token as string;
+    await ctx.db.update(users).set({ passwordHash: await hashPassword('member-pass') }).where(eq(users.id, memberId));
+    const token = (await http().post('/v1/auth/login').send({ gymId: 'gym-a', phone, password: 'member-pass' })).body.token as string;
     return { memberId, token };
   };
 
@@ -75,17 +75,6 @@ describe('staff routes: door, approvals, members, dashboard, messages, setup', (
       expect(logB.body.every((c: { memberId: string | null }) => c.memberId === null)).toBe(true);
     });
 
-    it('disabled members are blocked at every entry point (documented default), and the scan is saved', async () => {
-      await member('IH-0003', '3001000003', addDays(today, 20), { fingerprintId: '33' });
-      await as(t.owner).patch('/v1/members/IH-0003', { active: false });
-      expect((await as(t.reception).post('/v1/checkins/scan', { code: 'IH-0003' })).body).toEqual({ ok: false, message: MEMBER_DISABLED });
-      const device = await http().post('/v1/devices/gym-a/fingerprint').set('x-device-key', 'device-a').send({ fingerprintId: '33' });
-      expect(device.body).toEqual({ ok: false, message: MEMBER_DISABLED });
-      const [m] = await ctx.db.select().from(members).where(eq(members.code, 'IH-0003'));
-      const saved = await ctx.db.select().from(checkins).where(eq(checkins.memberId, m!.userId));
-      expect(saved.map((c) => [c.allowed, c.reason])).toEqual([[false, MEMBER_DISABLED], [false, MEMBER_DISABLED]]);
-      await as(t.owner).patch('/v1/members/IH-0003', { active: true });
-    });
   });
 
   describe('approvals: payment screenshots and freezes', () => {
@@ -162,10 +151,10 @@ describe('staff routes: door, approvals, members, dashboard, messages, setup', (
     });
   });
 
-  describe('members: list, page, edit, reset password', () => {
+  describe('members: list, page, edit', () => {
     it('lists with search by name, ID or phone, and a status filter', async () => {
       const all = await as(t.reception).get('/v1/members');
-      expect(all.body.length).toBeGreaterThanOrEqual(4);
+      expect(all.body.map((m: { code: string }) => m.code).sort()).toEqual(['IH-0001', 'IH-0002', 'IH-0010']);
       expect((await as(t.reception).get('/v1/members?q=ih-0002')).body.map((m: { code: string }) => m.code)).toEqual(['IH-0002']);
       expect((await as(t.reception).get('/v1/members?q=0300 1000001')).body.map((m: { code: string }) => m.code)).toEqual(['IH-0001']);
       const overdue = await as(t.reception).get('/v1/members?status=overdue');
@@ -197,28 +186,29 @@ describe('staff routes: door, approvals, members, dashboard, messages, setup', (
       expect(await ctx.db.select().from(dueDateChanges).where(eq(dueDateChanges.memberId, before!.userId))).toHaveLength(1);
     });
 
+    it('Disable/Enable stores the account flag (§6)', async () => {
+      expect((await as(t.owner).patch('/v1/members/IH-0002', { active: false })).body.active).toBe(false);
+      expect((await as(t.owner).patch('/v1/members/IH-0002', { active: true })).body.active).toBe(true);
+    });
+
     it('refuses a phone or thumbprint ID that belongs to another member', async () => {
       expect((await as(t.reception).patch('/v1/members/IH-0001', { phone: '0300 1000002' })).status).toBe(409);
+      expect((await as(t.reception).patch('/v1/members/IH-0002', { fingerprintId: '33' })).status).toBe(200);
       expect((await as(t.reception).patch('/v1/members/IH-0001', { fingerprintId: '33' })).status).toBe(409);
     });
 
-    it('reset password shows a new 6-digit password that works', async () => {
-      const res = await as(t.reception).post('/v1/members/IH-0001/reset-password');
-      expect(res.body.temporaryPassword).toMatch(/^\d{6}$/);
-      expect((await http().post('/v1/auth/login').send({ gymId: 'gym-a', phone: '3001000001', password: res.body.temporaryPassword })).status).toBe(200);
-    });
   });
 
   describe('dashboard and reports', () => {
-    it('dashboard: counts, fees this month (corrections counted once), overdue and due soon', async () => {
+    it('dashboard: counts, fees this month, overdue and due in the next 5 days', async () => {
       const res = await as(t.reception).get('/v1/dashboard');
       expect(res.status).toBe(200);
       const all = await ctx.db.select().from(payments).where(eq(payments.gymId, 'gym-a'));
-      const fees = all.filter((p) => !p.correctsPaymentId).reduce((s, p) => s + p.amountPkr, 0);
-      expect(res.body).toMatchObject({ feesThisMonthPkr: fees, checkinsToday: 1, pendingFreezes: 0 });
+      const todayScans = await ctx.db.select().from(checkins).where(eq(checkins.gymId, 'gym-a'));
+      expect(res.body).toMatchObject({ feesThisMonthPkr: all.reduce((s, p) => s + p.amountPkr, 0), checkinsToday: todayScans.length, pendingFreezes: 0 });
       expect(res.body.overdue.map((m: { code: string }) => m.code)).toEqual(['IH-0002']);
       expect(res.body.overduePkr).toBe(4000);
-      expect(res.body.dueSoon.every((m: { dueOn: string }) => m.dueOn <= addDays(today, 5))).toBe(true);
+      expect(res.body.dueSoon.every((m: { dueOn: string }) => m.dueOn >= today && m.dueOn <= addDays(today, 5))).toBe(true);
     });
 
     it('reports are owner only (reception gets 403, §13); fees by month, check-ins and might-quit', async () => {
@@ -229,22 +219,14 @@ describe('staff routes: door, approvals, members, dashboard, messages, setup', (
       expect(res.body.feesByMonth[5].month).toBe(today.slice(0, 7));
       expect(res.body.checkinsByHour).toHaveLength(24);
       expect(res.body.dailyCheckins).toHaveLength(30);
-      expect(res.body.dailyCheckins[29]).toEqual({ date: today, count: 1 });
+      const scans = await ctx.db.select().from(checkins).where(eq(checkins.gymId, 'gym-a'));
+      expect(res.body.dailyCheckins[29]).toEqual({ date: today, count: scans.length });
       expect(res.body.thisMonthByMethod.map((m: { method: string }) => m.method)).toEqual(['cash', 'jazzcash', 'easypaisa', 'bank']);
       expect(res.body.mightQuit.map((m: { code: string }) => m.code)).not.toContain('IH-0001');
     });
   });
 
   describe('WhatsApp log and announcements', () => {
-    it('fee reminders go to overdue and due-within-3-days members, at most once in 7 days', async () => {
-      const first = await as(t.reception).post('/v1/whatsapp/reminders');
-      expect(first.status).toBe(200);
-      expect(first.body.queued).toBeGreaterThanOrEqual(1);
-      const reminders = await ctx.db.select().from(whatsappMessages).where(eq(whatsappMessages.kind, 'reminder'));
-      expect(reminders.map((r) => r.body).join('\n')).toContain('Iron House Fitness membership fee of PKR 4,000 was due on');
-      expect((await as(t.reception).post('/v1/whatsapp/reminders')).body).toEqual({ queued: 0 });
-    });
-
     it('lists To send / Sent with wa.me links, and Mark sent', async () => {
       const toSend = await as(t.reception).get('/v1/whatsapp?status=to_send');
       expect(toSend.body.length).toBeGreaterThan(0);
@@ -298,7 +280,6 @@ describe('staff routes: door, approvals, members, dashboard, messages, setup', (
       expect(res.body).toMatchObject({ graceDays: 5, payTo: { label: 'JazzCash' }, deviceKey: 'device-a' });
       expect(JSON.stringify(res.body)).not.toContain('secret-gym-a');
       expect((await as(t.reception).get('/v1/settings')).status).toBe(403);
-      expect((await as(t.owner).patch('/v1/settings', { primaryColor: 'red' })).status).toBe(400);
     });
 
     it('brand is public and exposes no secrets; exercises are built-in plus own gym', async () => {

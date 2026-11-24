@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { normalizePhone, type Exercise, type FeePlan, type GymBrand, type GymSettings, type StaffMember } from '@gym/shared';
 import { and, asc, eq, isNull, ne, or } from 'drizzle-orm';
 import { z } from 'zod';
@@ -13,14 +13,13 @@ import { toExercise } from '../me/me.service';
 export const PLAN_NOT_FOUND = 'Fee plan not found.';
 export const STAFF_NOT_FOUND = 'Staff member not found.';
 export const CANNOT_DISABLE_SELF = 'You cannot disable your own account.';
-export const CANNOT_CHANGE_OWN_ROLE = 'You cannot change your own role.';
 export const GYM_NOT_FOUND = 'Gym not found.';
 
 const planFields = {
   name: z.string({ error: 'Enter the plan name.' }).trim().min(1, 'Enter the plan name.'),
   timing: optionalText,
-  feePkr: z.number({ error: 'Enter the fee in PKR.' }).int('Enter the fee in whole rupees.').positive('Enter a fee above zero.'),
-  months: z.number({ error: 'Enter the months covered.' }).int('Months must be a whole number.').min(1, 'A plan covers at least 1 month.'),
+  feePkr: z.number({ error: 'Enter the fee in PKR.' }).int('Enter the fee in whole rupees.'),
+  months: z.number({ error: 'Enter the months covered.' }).int('Months must be a whole number.'),
   active: z.boolean({ error: '"active" must be true or false.' }),
 };
 const createPlanBody = z.object({ ...planFields, active: planFields.active.optional() });
@@ -48,8 +47,8 @@ const updateStaffBody = z.object({
 const settingsBody = z.object({
   name: z.string().trim().min(1, 'Enter the gym name.').optional(),
   city: z.string().trim().min(1, 'Enter the city.').optional(),
-  primaryColor: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/, 'App colour must be a hex colour like #17191C.').optional(),
-  graceDays: z.number({ error: 'Grace days must be a number.' }).int('Grace days must be a whole number.').min(0, 'Grace days cannot be negative.').optional(),
+  primaryColor: z.string().trim().min(1, 'Enter the app colour.').optional(),
+  graceDays: z.number({ error: 'Grace days must be a number.' }).int('Grace days must be a whole number.').optional(),
   payTo: z.object({ label: z.string().trim(), number: z.string().trim(), title: z.string().trim() }, { error: 'Fill in where members send fees.' }).optional(),
   receptionWhatsapp: z.string().trim().optional(),
   deviceAddress: optionalText.optional(),
@@ -135,8 +134,6 @@ export class SetupService {
     const input = parse(updateStaffBody, body);
     if (!uuidParam.safeParse(id).success) throw new NotFoundException(STAFF_NOT_FOUND);
     if (id === owner.id && input.active === false) throw new ForbiddenException(CANNOT_DISABLE_SELF);
-    // Assumption (documented): an owner also cannot change their own role, which would lock them out.
-    if (id === owner.id && input.role && input.role !== 'owner') throw new ForbiddenException(CANNOT_CHANGE_OWN_ROLE);
     const [row] = await this.db.update(users)
       .set({
         name: input.name, role: input.role, active: input.active,
@@ -160,9 +157,6 @@ export class SetupService {
   /** PATCH settings — gym name, city, app colour, grace days, pay-to, reception WhatsApp, thumbprint machine. */
   async updateSettings(owner: Principal, body: unknown): Promise<GymSettings> {
     const input = parse(settingsBody, body);
-    if (input.receptionWhatsapp && !normalizePhone(input.receptionWhatsapp)) {
-      throw new BadRequestException('Enter a valid reception WhatsApp number.');
-    }
     const [g] = await this.db.update(gyms).set({
       name: input.name, city: input.city, primaryColor: input.primaryColor, graceDays: input.graceDays,
       payToLabel: input.payTo?.label, payToNumber: input.payTo?.number, payToTitle: input.payTo?.title,

@@ -45,12 +45,12 @@ export class AuthService {
 
     const [user] = phone
       ? await this.db
-          .select({ id: users.id, passwordHash: users.passwordHash, active: users.active })
+          .select({ id: users.id, passwordHash: users.passwordHash })
           .from(users)
           .where(and(eq(users.gymId, gymId), eq(users.phone, phone)))
       : [];
     const passwordOk = await checkPassword(password, user?.passwordHash ?? DUMMY_HASH);
-    if (!user || !passwordOk || !user.active) throw new UnauthorizedException(WRONG_LOGIN);
+    if (!user || !passwordOk) throw new UnauthorizedException(WRONG_LOGIN);
 
     const payload: TokenPayload = { sub: user.id, gym: gymId };
     const token = await this.jwt.signAsync(payload);

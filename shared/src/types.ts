@@ -306,8 +306,6 @@ export interface RecordPaymentRequest {
   amountPkr: number;
   method: PaymentMethod;
   txnId?: string | null;
-  /** Set to record a Corrected Payment: the ID of the original payment it corrects. */
-  correctsPaymentId?: string | null;
 }
 
 export interface Payment {
@@ -462,10 +460,6 @@ export interface UpdateMemberRequest {
   trainerId?: string | null;
   active?: boolean;
   dueOn?: string;
-}
-
-export interface ResetPasswordResponse {
-  temporaryPassword: string;
 }
 
 /** §6 Fees and payments: approvals. */

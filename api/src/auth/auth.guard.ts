@@ -31,8 +31,7 @@ export function roleAllowed(role: Role, allowed: readonly Role[]): boolean {
 
 /**
  * Runs on every route (registered as APP_GUARD). Verifies the bearer token,
- * reloads the user scoped to the token's gym (a disabled or deleted account is
- * refused at once), then checks the route's roles.
+ * reloads the user scoped to the token's gym, then checks the route's roles.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -59,10 +58,10 @@ export class AuthGuard implements CanActivate {
     if (typeof payload.sub !== 'string' || typeof payload.gym !== 'string') throw new UnauthorizedException(LOGIN_AGAIN);
 
     const [user] = await this.db
-      .select({ id: users.id, gymId: users.gymId, role: users.role, name: users.name, phone: users.phone, active: users.active })
+      .select({ id: users.id, gymId: users.gymId, role: users.role, name: users.name, phone: users.phone })
       .from(users)
       .where(and(eq(users.id, payload.sub), eq(users.gymId, payload.gym)));
-    if (!user || !user.active) throw new UnauthorizedException(LOGIN_AGAIN);
+    if (!user) throw new UnauthorizedException(LOGIN_AGAIN);
 
     const allowed = this.reflector.getAllAndOverride<Role[] | undefined>(ROLES, targets);
     if (allowed && !roleAllowed(user.role, allowed)) throw new ForbiddenException(NO_ACCESS);
