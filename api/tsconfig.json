@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "node20",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "sourceMap": true,
+    "rootDir": "..",
+    "outDir": "dist",
+    "paths": {
+      "@gym/shared": ["../shared/src"]
+    }
+  },
+  "include": ["src", "test", "drizzle.config.ts", "vitest.config.ts"]
+}

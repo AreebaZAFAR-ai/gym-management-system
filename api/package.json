@@ -1,0 +1,44 @@
+{
+  "name": "@gym/api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Gym management API (NestJS, Drizzle, PostgreSQL)",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
+    "start": "node dist/api/src/main.js",
+    "dev": "npm run build && npm run start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:check": "node scripts/db-check.mjs",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "@gym/shared": "1.0.0",
+    "@nestjs/common": "^11.2.11",
+    "@nestjs/core": "^11.2.11",
+    "@nestjs/platform-express": "^11.2.11",
+    "@noble/hashes": "^2.0.1",
+    "drizzle-orm": "^0.45.4",
+    "pg": "^8.23.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.6.0",
+    "@nestjs/testing": "^11.2.11",
+    "@types/express": "^5.0.6",
+    "@types/node": "^20.19.0",
+    "@types/pg": "^8.23.1",
+    "@types/supertest": "^7.2.1",
+    "drizzle-kit": "^0.31.11",
+    "supertest": "^7.3.2",
+    "tsc-alias": "^1.9.10",
+    "typescript": "~6.0.3",
+    "vitest": "^3.2.4"
+  }
+}

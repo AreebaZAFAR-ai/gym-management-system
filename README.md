@@ -8,7 +8,7 @@ gets its own branded member app.
 | --- | --- | --- | --- |
 | Mobile app (members, reception, trainers) | `app/` | Expo (React Native), TypeScript, Expo Router | Built; runs on demo data |
 | Shared types and business rules | `shared/` | TypeScript, Vitest | Built and tested |
-| API | `api/` | NestJS, Zod, JWT, bcrypt, PostgreSQL + Drizzle | Not started |
+| API | `api/` | NestJS, Zod, JWT, bcrypt, PostgreSQL (Neon) + Drizzle | Stage 1: skeleton and config |
 | Web admin | `admin/` | Next.js (App Router) | Not started |
 
 ## Quick start

@@ -1,10 +1,11 @@
 {
   "name": "gym",
   "private": true,
-  "workspaces": ["app", "shared"],
+  "workspaces": ["app", "shared", "api"],
   "scripts": {
     "app": "npm --workspace app run start",
-    "test": "npm --workspace shared run test",
-    "typecheck": "npm --workspace shared run typecheck && npm --workspace app run typecheck"
+    "api": "npm --workspace api run dev",
+    "test": "npm --workspace shared run test && npm --workspace api run test",
+    "typecheck": "npm --workspace shared run typecheck && npm --workspace api run typecheck && npm --workspace app run typecheck"
   }
 }
