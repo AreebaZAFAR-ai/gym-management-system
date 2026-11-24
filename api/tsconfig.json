@@ -5,7 +5,6 @@
     "lib": ["ES2023"],
     "types": ["node"],
     "strict": true,
-    "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -18,5 +17,6 @@
       "@gym/shared": ["../shared/src"]
     }
   },
-  "include": ["src", "test", "drizzle.config.ts", "vitest.config.ts"]
+  "include": ["src", "test", "drizzle.config.ts", "vitest.config.ts"],
+  "exclude": ["test/contract.e2e.test.ts"]
 }

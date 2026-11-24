@@ -6,9 +6,9 @@ gets its own branded member app.
 
 | Part | Folder | Stack | Status |
 | --- | --- | --- | --- |
-| Mobile app (members, reception, trainers) | `app/` | Expo (React Native), TypeScript, Expo Router | Built; runs on demo data |
+| Mobile app (members, reception, trainers) | `app/` | Expo (React Native), TypeScript, Expo Router | Built; talks to the API when `API_URL` is set (demo data otherwise) |
 | Shared types and business rules | `shared/` | TypeScript, Vitest | Built and tested |
-| API | `api/` | NestJS, Zod, JWT, bcrypt, PostgreSQL (Neon) + Drizzle | Stage 1: skeleton and config |
+| API | `api/` | NestJS, Zod, JWT, bcrypt, PostgreSQL (Neon) + Drizzle | All §10 routes built and tested; Neon migrated |
 | Web admin | `admin/` | Next.js (App Router) | Not started |
 
 ## Quick start

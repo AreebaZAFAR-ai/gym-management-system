@@ -10,5 +10,8 @@ app/ios/
 app/android/
 coverage/
 
+# Uploaded payment screenshots (members' private images; local-disk storage)
+uploads/
+
 # Company requirements document (kept local)
 *.pdf

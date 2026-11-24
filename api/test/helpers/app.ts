@@ -1,14 +1,15 @@
 import 'reflect-metadata';
-import { PGlite } from '@electric-sql/pglite';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { PGlite } from '@electric-sql/pglite';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { drizzle } from 'drizzle-orm/pglite';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/app.setup';
 import { ENV } from '../../src/config/config.module';
 import { parseEnv, type Env } from '../../src/config/env';
 import { DB, PG_POOL, type Database } from '../../src/db/db.module';
-import * as schema from '../../src/db/schema';
+import { createTestDb } from './db';
 
 /** Test settings. Tests never touch Neon: the database is in-memory PGlite. */
 export const TEST_ENV: Env = parseEnv({
@@ -16,6 +17,7 @@ export const TEST_ENV: Env = parseEnv({
   DATABASE_URL: 'postgresql://unused@localhost/unused',
   JWT_SECRET: 'test-secret-that-is-long-enough-for-validation',
   CORS_ORIGINS: 'http://admin.test',
+  UPLOAD_DIR: join(tmpdir(), 'gym-api-test-uploads'),
 });
 
 export interface TestContext {
@@ -24,13 +26,12 @@ export interface TestContext {
   pglite: PGlite;
 }
 
-export async function createTestApp(): Promise<TestContext> {
-  const pglite = new PGlite();
-  const db = drizzle(pglite, { schema }) as unknown as Database;
+export async function createTestApp(env: Partial<Env> = {}): Promise<TestContext> {
+  const { db, pglite } = await createTestDb();
 
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(ENV)
-    .useValue(TEST_ENV)
+    .useValue({ ...TEST_ENV, ...env })
     .overrideProvider(PG_POOL)
     .useValue({ end: async () => {} })
     .overrideProvider(DB)

@@ -19,6 +19,8 @@ const envSchema = z
     JWT_SECRET: z.string().min(32, 'must be at least 32 characters'),
     /** Comma-separated origins allowed to call the API from a browser (the web admin). */
     CORS_ORIGINS: z.string().trim().optional(),
+    /** Folder for uploaded payment screenshots (local disk; §8 development storage). Default ./uploads. */
+    UPLOAD_DIR: z.string().trim().min(1).optional(),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production' && !env.CORS_ORIGINS) {
