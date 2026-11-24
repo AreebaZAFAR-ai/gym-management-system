@@ -247,6 +247,9 @@ export interface CreatePlanResponse {
 
 export interface TrainerSession {
   id: string;
+  /** The trainer the session belongs to (the owner sees every trainer's sessions). */
+  trainerId: string;
+  trainerName: string;
   memberId: string | null;
   startsAt: string;
   title: string;
@@ -303,6 +306,8 @@ export interface RecordPaymentRequest {
   amountPkr: number;
   method: PaymentMethod;
   txnId?: string | null;
+  /** Set to record a Corrected Payment: the ID of the original payment it corrects. */
+  correctsPaymentId?: string | null;
 }
 
 export interface Payment {
@@ -315,6 +320,8 @@ export interface Payment {
   periodTo: string;
   recordedBy: string;
   proofId: string | null;
+  /** Corrected Payment: the original payment this row corrects (the original is kept unchanged). */
+  correctsPaymentId?: string | null;
   createdAt: string;
 }
 
@@ -322,6 +329,257 @@ export interface RecordPaymentResponse {
   payment: Payment;
   newDueOn: string;
   message: string;
+}
+
+// ---------- Member registration (reception, owner) ----------
+
+export interface RegisterMemberRequest {
+  name: string;
+  /** Any common format; stored as 10 digits starting with 3. */
+  phone: string;
+  gender?: Gender | null;
+  /** "YYYY-MM-DD" */
+  joinedOn: string;
+  goal?: Goal | null;
+  emergencyContact?: string | null;
+  /** Thumbprint ID from the gym's fingerprint device. */
+  fingerprintId?: string | null;
+  notes?: string | null;
+  /** Fee plan. */
+  planId: string;
+  trainerId?: string | null;
+  /** Registration requires the first membership payment. */
+  payment: { amountPkr: number; method: PaymentMethod; txnId?: string | null };
+}
+
+export interface RegisterMemberResponse {
+  memberId: string;
+  code: string;
+  /** Default password (last 6 digits of the mobile number), shown once to reception. */
+  temporaryPassword: string;
+  dueOn: string;
+  payment: Payment;
+}
+
+// ---------- Staff screens (web admin and reception) ----------
+
+/** §6 Fee plans. Hidden plans (active = false) stay on existing members. */
+export interface FeePlan {
+  id: string;
+  name: string;
+  timing: string | null;
+  feePkr: number;
+  months: number;
+  active: boolean;
+}
+
+export interface FeePlanInput {
+  name: string;
+  timing?: string | null;
+  feePkr: number;
+  months: number;
+  active?: boolean;
+}
+
+/** §6 Members list row. */
+export interface MemberListItem {
+  memberId: string;
+  code: string;
+  name: string;
+  phone: string;
+  planId: string;
+  planName: string;
+  planTiming: string | null;
+  feePkr: number;
+  dueOn: string;
+  frozenUntil: string | null;
+  status: MembershipStatus;
+  /** Account enabled (Disable/Enable on the member page). */
+  active: boolean;
+  trainerId: string | null;
+  trainerName: string | null;
+}
+
+export interface CheckinLogItem {
+  id: string;
+  /** Null when the scan identified no member. */
+  memberId: string | null;
+  memberCode: string | null;
+  memberName: string | null;
+  allowed: boolean;
+  reason: string | null;
+  source: CheckinSource;
+  scannedBy: string | null;
+  createdAt: string;
+}
+
+export interface WhatsAppMessage {
+  id: string;
+  memberId: string | null;
+  memberName: string | null;
+  toPhone: string;
+  kind: WhatsAppKind;
+  body: string;
+  status: WhatsAppStatus;
+  createdAt: string;
+  /** wa.me link with the text filled in (§6 "Open in WhatsApp"). */
+  link: string;
+}
+
+export interface DueDateChange {
+  id: string;
+  oldDueOn: string;
+  newDueOn: string;
+  changedBy: string;
+  createdAt: string;
+}
+
+/** §6 Member page. */
+export interface MemberDetail extends MemberListItem {
+  gender: Gender | null;
+  goal: Goal | null;
+  joinedOn: string;
+  emergencyContact: string | null;
+  fingerprintId: string | null;
+  notes: string | null;
+  visitsLast30Days: number;
+  payments: Payment[];
+  checkins: CheckinLogItem[];
+  whatsapp: WhatsAppMessage[];
+  dueDateChanges: DueDateChange[];
+}
+
+/** §6 Edit member. `dueOn` is owner only and is logged (§11). */
+export interface UpdateMemberRequest {
+  name?: string;
+  phone?: string;
+  gender?: Gender | null;
+  goal?: Goal | null;
+  emergencyContact?: string | null;
+  fingerprintId?: string | null;
+  notes?: string | null;
+  planId?: string;
+  trainerId?: string | null;
+  active?: boolean;
+  dueOn?: string;
+}
+
+export interface ResetPasswordResponse {
+  temporaryPassword: string;
+}
+
+/** §6 Fees and payments: approvals. */
+export interface PaymentProofItem {
+  id: string;
+  memberId: string;
+  memberCode: string;
+  memberName: string;
+  status: RequestStatus;
+  /** Short-lived signed link (§11: screenshots are not public URLs). Relative to the API base URL. */
+  imageUrl: string;
+  /** Plan fee, to pre-fill the editable amount. */
+  feePkr: number;
+  createdAt: string;
+}
+
+export interface ApproveProofRequest {
+  amountPkr: number;
+  method: PaymentMethod;
+}
+
+export interface FreezeRequestItem {
+  id: string;
+  memberId: string;
+  memberCode: string;
+  memberName: string;
+  days: number;
+  reason: FreezeReason;
+  status: RequestStatus;
+  createdAt: string;
+  dueOn: string;
+  /** Due date if approved today. */
+  newDueOn: string;
+}
+
+/** §6 Overview. */
+export interface DashboardSummary {
+  activeMembers: number;
+  joinedThisMonth: number;
+  checkinsToday: number;
+  feesThisMonthPkr: number;
+  overdueCount: number;
+  overduePkr: number;
+  pendingProofs: number;
+  pendingFreezes: number;
+  overdue: MemberListItem[];
+  dueSoon: MemberListItem[];
+}
+
+/** §6 Reports (owner). */
+export interface ReportsSummary {
+  feesByMonth: { month: string; totalPkr: number }[];
+  checkinsByHour: { hour: number; count: number }[];
+  dailyCheckins: { date: string; count: number }[];
+  thisMonthByMethod: { method: PaymentMethod; totalPkr: number }[];
+  mightQuit: MemberListItem[];
+}
+
+/** §6 Staff and roles (owner). */
+export interface StaffMember {
+  id: string;
+  name: string;
+  phone: string;
+  role: StaffRole;
+  active: boolean;
+}
+
+export interface CreateStaffRequest {
+  name: string;
+  phone: string;
+  role: StaffRole;
+  password: string;
+}
+
+export interface UpdateStaffRequest {
+  name?: string;
+  role?: StaffRole;
+  active?: boolean;
+  password?: string;
+}
+
+/** §6 Settings (owner). The check-in secret is never returned. */
+export interface GymSettings {
+  name: string;
+  city: string;
+  primaryColor: string;
+  graceDays: number;
+  payTo: PayTo;
+  receptionWhatsapp: string;
+  deviceAddress: string | null;
+  deviceKey: string | null;
+}
+
+export type UpdateGymSettings = Partial<GymSettings>;
+
+export interface CreateAnnouncementRequest {
+  title: string;
+  body: string;
+  /** Optional WhatsApp copy to all active members (§6). */
+  sendWhatsApp?: boolean;
+}
+
+// ---------- Trainer sessions (trainer, owner) ----------
+
+export interface CreateTrainerSessionRequest {
+  /** Owner only: the trainer the session is assigned to. Trainers always create their own. */
+  trainerId?: string | null;
+  /** Client; null for a class. */
+  memberId?: string | null;
+  /** ISO timestamp. */
+  startsAt: string;
+  title: string;
+  meta?: string | null;
+  kind: 'pt' | 'class';
 }
 
 // ---------- Announcements ----------

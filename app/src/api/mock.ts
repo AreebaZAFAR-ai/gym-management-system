@@ -213,9 +213,9 @@ const trainerPlans: { id: string; trainerId: string; name: string; date: string;
 const nowIso = () => new Date().toISOString();
 const atPk = (hhmm: string) => new Date(`${today}T${hhmm}:00+05:00`).toISOString();
 const trainerSessions: TrainerSession[] = [
-  { id: 'ts1', memberId: 'u-ali', startsAt: atPk('07:00'), title: 'Ali Raza', meta: 'Push · session 6 of 12', kind: 'pt', done: false },
-  { id: 'ts2', memberId: 'u-hina', startsAt: atPk('11:30'), title: 'Hina Malik', meta: 'Legs · session 4 of 12', kind: 'pt', done: false },
-  { id: 'ts3', memberId: null, startsAt: atPk('18:00'), title: 'Evening circuit', meta: 'Group class · 12 booked', kind: 'class', done: false },
+  { id: 'ts1', trainerId: 'u-bilal', trainerName: 'Bilal Ahmed', memberId: 'u-ali', startsAt: atPk('07:00'), title: 'Ali Raza', meta: 'Push · session 6 of 12', kind: 'pt', done: false },
+  { id: 'ts2', trainerId: 'u-bilal', trainerName: 'Bilal Ahmed', memberId: 'u-hina', startsAt: atPk('11:30'), title: 'Hina Malik', meta: 'Legs · session 4 of 12', kind: 'pt', done: false },
+  { id: 'ts3', trainerId: 'u-bilal', trainerName: 'Bilal Ahmed', memberId: null, startsAt: atPk('18:00'), title: 'Evening circuit', meta: 'Group class · 12 booked', kind: 'class', done: false },
 ];
 
 // ---------------- Helpers ----------------

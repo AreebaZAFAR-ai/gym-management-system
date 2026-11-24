@@ -59,6 +59,18 @@ export function paymentPeriod(
   return { periodFrom, periodTo: addMonths(periodFrom, planMonths) };
 }
 
+/**
+ * First membership payment at registration: the period starts on the payment
+ * date and runs for the plan's months (month-end clamped: 31 Jan + 1 = 28/29 Feb).
+ * periodTo is the member's first due date.
+ */
+export function firstPaymentPeriod(
+  planMonths: number,
+  paymentDate: string,
+): { periodFrom: string; periodTo: string } {
+  return { periodFrom: paymentDate, periodTo: addMonths(paymentDate, planMonths) };
+}
+
 /** On approval the due date moves later by the days frozen. */
 export function applyFreeze(
   dueOn: string,

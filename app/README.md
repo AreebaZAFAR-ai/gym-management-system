@@ -35,12 +35,28 @@ phone number.
 | Ayesha Noor (reception) | 0333 1234567 | Scan and collect |
 | Bilal Ahmed (trainer) | 0344 1234567 | My day and plan builder |
 
+### Against the real API
+
+```bash
+npm run api                                   # API on port 3000 (see api/README.md)
+API_URL=http://<your-PC-LAN-IP>:3000 npm run app
+```
+
+The phone and PC must be on the same Wi-Fi. The gym in `brands/<GYM>.json`
+must exist in the database (create it with `npm --workspace api run gym:create`)
+and you log in with real accounts. Staff add members in the web admin, or with
+`POST /v1/members`.
+
+**Production builds refuse to run without a real `https://` `API_URL`**, so
+demo data can never ship by accident. Demo mode stays available for
+development and demos (`API_URL` unset or `mock`).
+
 ## Environment
 
 | Variable | Used at | Meaning |
 | --- | --- | --- |
 | `GYM` | build | Brand file to use: `brands/<GYM>.json` (default `ironhouse`) |
-| `API_URL` | build | API base URL, e.g. `https://api.example.pk`. Unset or `mock` uses demo data |
+| `API_URL` | build | API base URL, e.g. `https://api.example.pk`. Unset or `mock` uses demo data (not allowed for the `production` EAS profile) |
 
 ## Adding a gym (white-label, spec §12)
 

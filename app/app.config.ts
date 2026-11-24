@@ -32,6 +32,14 @@ if (!fs.existsSync(brandPath)) {
 }
 const brand: BrandFile = JSON.parse(fs.readFileSync(brandPath, 'utf8'));
 
+// The real API is the default for store builds: a production build must name its
+// server, so demo data can never ship by accident. Demo mode ("mock") stays an
+// explicit choice for development and demos.
+const apiUrl = process.env.API_URL ?? 'mock';
+if (process.env.EAS_BUILD_PROFILE === 'production' && (apiUrl === 'mock' || !/^https:\/\//.test(apiUrl))) {
+  throw new Error('Production builds need API_URL set to the live API (https://...). Demo data is not allowed in production.');
+}
+
 const brandAsset = (file: string, fallback: string) =>
   fs.existsSync(path.join(__dirname, 'brands', gym, file)) ? `./brands/${gym}/${file}` : fallback;
 
@@ -106,6 +114,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       payTo: brand.payTo,
       receptionWhatsapp: brand.receptionWhatsapp,
     },
-    apiUrl: process.env.API_URL ?? 'mock',
+    apiUrl,
   },
 });

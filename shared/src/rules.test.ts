@@ -18,6 +18,7 @@ import {
   membershipStatus,
   normalizePhone,
   paymentPeriod,
+  firstPaymentPeriod,
   pkToday,
   platesFor,
   sessionVolume,
@@ -117,6 +118,14 @@ describe('payments and freeze', () => {
     expect(paymentPeriod('2026-11-30', 1, '2026-11-24')).toEqual({ periodFrom: '2026-11-30', periodTo: '2026-12-30' }));
   it('late payment starts today', () =>
     expect(paymentPeriod('2026-11-07', 1, '2026-11-25')).toEqual({ periodFrom: '2026-11-25', periodTo: '2026-12-25' }));
+  it('first payment starts on the payment date and runs for the plan months', () => {
+    expect(firstPaymentPeriod(1, '2026-11-25')).toEqual({ periodFrom: '2026-11-25', periodTo: '2026-12-25' });
+    expect(firstPaymentPeriod(3, '2026-11-25')).toEqual({ periodFrom: '2026-11-25', periodTo: '2027-02-25' });
+  });
+  it('first payment uses month-end clamping', () => {
+    expect(firstPaymentPeriod(1, '2026-01-31')).toEqual({ periodFrom: '2026-01-31', periodTo: '2026-02-28' });
+    expect(firstPaymentPeriod(1, '2028-01-31')).toEqual({ periodFrom: '2028-01-31', periodTo: '2028-02-29' });
+  });
   it('7-day freeze moves due date 7 days', () =>
     expect(applyFreeze('2026-12-10', 7, '2026-11-24')).toEqual({ dueOn: '2026-12-17', frozenUntil: '2026-11-30' }));
   it('member codes', () => expect(memberCode('IH', 419)).toBe('IH-0419'));
