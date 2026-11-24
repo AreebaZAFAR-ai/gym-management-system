@@ -1,0 +1,10 @@
+{
+  "id": "ironhouse",
+  "name": "Iron House Fitness",
+  "short": "IH",
+  "city": "Lahore",
+  "primaryColor": "#17191C",
+  "bundleId": "pk.ironhouse.members",
+  "payTo": { "label": "JazzCash", "number": "03001112233", "title": "Iron House Fitness" },
+  "receptionWhatsapp": "3001112233"
+}

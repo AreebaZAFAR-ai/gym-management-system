@@ -1,0 +1,14 @@
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+.env
+.env.*
+!.env.example
+app/ios/
+app/android/
+coverage/
+
+# Company requirements document (kept local)
+*.pdf
