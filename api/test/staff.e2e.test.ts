@@ -250,7 +250,7 @@ describe('staff routes: door, approvals, members, dashboard, messages, setup', (
       expect((await as(t.receptionB).patch(`/v1/whatsapp/${msg.id}`, { status: 'sent' })).status).toBe(404);
     });
 
-    it('§7 fee reminders: overdue and due within 3 days, at most once in 7 days per member; never frozen or unpaid members', async () => {
+    it('§7 fee reminders: overdue and due within 3 days, at most once in 7 days per member; never frozen members; an unpaid member is due from joining', async () => {
       const { memberId: dueIn2 } = await member('IH-0030', '3001000030', addDays(today, 2));
       const { memberId: dueIn4 } = await member('IH-0031', '3001000031', addDays(today, 4));
       const { memberId: frozenDue } = await member('IH-0032', '3001000032', addDays(today, 1), { frozenUntil: addDays(today, 3) });
@@ -270,7 +270,8 @@ describe('staff routes: door, approvals, members, dashboard, messages, setup', (
       expect(ids).not.toContain(dueIn4);
       expect(ids).not.toContain(frozenDue);
       expect(ids).not.toContain(frozenOverdue);
-      expect(ids).not.toContain(unpaid.body.memberId);
+      // Registered today with no payment: due today (the joining date), so within 3 days.
+      expect(ids).toContain(unpaid.body.memberId);
       expect(first.body).toEqual({ queued: reminders.length });
       expect(reminders.find((m: { memberId: string }) => m.memberId === dueIn2).body).toBe(
         `Assalam o Alaikum IH-0030, your Iron House Fitness fee of PKR 4,000 is due on ${formatShortDate(addDays(today, 2))}. Please pay to keep your membership active. Thank you!`,

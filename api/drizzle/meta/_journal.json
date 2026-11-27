@@ -36,6 +36,13 @@
       "when": 1795646704962,
       "tag": "0004_gym_self_registration",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795819017517,
+      "tag": "0005_due_on_from_joined_on",
+      "breakpoints": true
     }
   ]
 }

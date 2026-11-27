@@ -28,6 +28,8 @@ export const DUPLICATE_PHONE = 'This mobile number is already registered.';
 export const DUPLICATE_FINGERPRINT = 'This thumbprint ID is already assigned to another member.';
 export const MEMBER_NOT_FOUND = 'Member not found.';
 export const OWNER_ONLY_DUE_DATE = 'Only the owner can change a due date.';
+export const CHOOSE_GYM_TRAINER = 'Choose a trainer from this gym.';
+export const HIDDEN_PLAN = 'This fee plan is hidden. Choose an active plan.';
 
 const phoneField = z.string({ error: 'Enter a mobile number.' }).transform((v, ctx) => {
   const n = normalizePhone(v);
@@ -47,7 +49,7 @@ const registerBody = z.object({
   fingerprintId: optionalText,
   notes: optionalText,
   planId: z.string({ error: 'Choose a fee plan.' }).uuid('Choose a fee plan.'),
-  trainerId: z.string().uuid('Trainer not found.').nullish(),
+  trainerId: z.string().uuid(CHOOSE_GYM_TRAINER).nullish(),
   // §6 Add member: "Optional first payment with method."
   payment: z
     .object({ amountPkr, method: paymentMethod, txnId: optionalText }, { error: 'Enter the payment amount and method.' })
@@ -63,7 +65,7 @@ const updateBody = z.object({
   fingerprintId: optionalText.optional(),
   notes: optionalText.optional(),
   planId: z.string().uuid('Fee plan not found.').optional(),
-  trainerId: z.string().uuid('Trainer not found.').nullish(),
+  trainerId: z.string().uuid(CHOOSE_GYM_TRAINER).nullish(),
   active: z.boolean({ error: '"active" must be true or false.' }).optional(),
   dueOn: isoDate('Enter the due date.').optional(),
 });
@@ -111,7 +113,9 @@ export class MembersService {
     try {
       await this.db.transaction(async (tx) => {
         const m = await this.find(tx, staff.gymId, code, true);
-        if (input.planId) await this.assertPlan(tx, staff.gymId, input.planId);
+        // §6 Fee plans: "Hidden plans stay on existing members" — a member may keep a
+        // hidden plan, but cannot be moved to one.
+        if (input.planId) await this.assertPlan(tx, staff.gymId, input.planId, input.planId !== m.planId);
         if (input.trainerId) await this.assertTrainer(tx, staff.gymId, input.trainerId);
 
         const userChanges = { name: input.name, phone: input.phone, active: input.active };
@@ -148,7 +152,7 @@ export class MembersService {
    * - Queues the welcome WhatsApp (§6/§7, owner-approved wording).
    * - Optional first payment (§6): when given, it starts on the payment date (today),
    *   runs the plan's months, sets the due date and queues the WhatsApp receipt (§7).
-   *   Without it no payment or receipt is created and the member has no due date yet.
+   *   Without it no payment or receipt is created and the due date is the joining date.
    */
   async register(staff: Principal, body: unknown): Promise<RegisterMemberResponse> {
     const input = parse(registerBody, body);
@@ -158,14 +162,14 @@ export class MembersService {
 
     try {
       return await this.db.transaction(async (tx) => {
-        const plan = await this.assertPlan(tx, staff.gymId, input.planId);
+        const plan = await this.assertPlan(tx, staff.gymId, input.planId, true);
         if (input.trainerId) await this.assertTrainer(tx, staff.gymId, input.trainerId);
 
         const [gym] = await tx
           .update(gyms)
           .set({ lastMemberNumber: sql`${gyms.lastMemberNumber} + 1` })
           .where(eq(gyms.id, staff.gymId))
-          .returning({ number: gyms.lastMemberNumber, prefix: gyms.memberPrefix, name: gyms.name });
+          .returning({ number: gyms.lastMemberNumber, prefix: gyms.memberPrefix, name: gyms.name, short: gyms.short });
         const code = memberCode(gym!.prefix, gym!.number);
 
         const [user] = await tx
@@ -176,17 +180,22 @@ export class MembersService {
 
         const pay = input.payment ?? null;
         const period = pay ? firstPaymentPeriod(plan.months, today) : null;
+        // Without a first payment the fee is due from the joining date, so the member is
+        // Overdue at once and blocked at the door once grace days pass (§1, §7). The first
+        // payment then follows the normal §7 rule (paid after the due date: starts today).
+        const dueOn = period?.periodTo ?? input.joinedOn;
         await tx.insert(members).values({
           userId: memberId, gymId: staff.gymId, code, planId: plan.id, trainerId: input.trainerId ?? null,
-          joinedOn: input.joinedOn, dueOn: period?.periodTo ?? null, goal: input.goal ?? null, gender: input.gender ?? null,
+          joinedOn: input.joinedOn, dueOn, goal: input.goal ?? null, gender: input.gender ?? null,
           emergencyContact: input.emergencyContact, fingerprintId: input.fingerprintId, notes: input.notes,
         });
 
         await queueWhatsapp(tx, {
-          gymId: staff.gymId, memberId, toPhone: input.phone, kind: 'welcome', body: welcomeText(gym!.name),
+          gymId: staff.gymId, memberId, toPhone: input.phone, kind: 'welcome',
+          body: welcomeText({ memberName: input.name, gymName: gym!.name, gymShort: gym!.short, code, password: temporaryPassword }),
         });
 
-        if (!pay || !period) return { memberId, code, temporaryPassword, dueOn: null, payment: null };
+        if (!pay || !period) return { memberId, code, temporaryPassword, dueOn, payment: null };
 
         const [payment] = await tx
           .insert(payments)
@@ -233,17 +242,20 @@ export class MembersService {
     return m;
   }
 
-  private async assertPlan(db: Executor, gymId: string, planId: string) {
-    const [plan] = await db.select({ id: plans.id, months: plans.months }).from(plans)
+  /** A fee plan of this gym; `mustBeActive` refuses hidden plans (§6 Fee plans). */
+  private async assertPlan(db: Executor, gymId: string, planId: string, mustBeActive: boolean) {
+    const [plan] = await db.select({ id: plans.id, months: plans.months, active: plans.active }).from(plans)
       .where(and(eq(plans.gymId, gymId), eq(plans.id, planId)));
     if (!plan) throw new BadRequestException('Fee plan not found.');
+    if (mustBeActive && !plan.active) throw new BadRequestException(HIDDEN_PLAN);
     return plan;
   }
 
+  /** An active trainer of this gym (§6 Add member: trainer). */
   private async assertTrainer(db: Executor, gymId: string, trainerId: string) {
     const [t] = await db.select({ id: users.id }).from(users)
-      .where(and(eq(users.gymId, gymId), eq(users.id, trainerId)));
-    if (!t) throw new BadRequestException('Trainer not found.');
+      .where(and(eq(users.gymId, gymId), eq(users.id, trainerId), eq(users.role, 'trainer'), eq(users.active, true)));
+    if (!t) throw new BadRequestException(CHOOSE_GYM_TRAINER);
   }
 
   private async toDetail(gymId: string, m: MemberRow): Promise<MemberDetail> {

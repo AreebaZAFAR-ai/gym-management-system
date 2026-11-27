@@ -35,9 +35,18 @@ export function receiptText(memberName: string, amountPkr: number, method: Payme
   );
 }
 
-/** Welcome WhatsApp queued at registration (§6/§7). Wording approved by the gym owner. */
-export function welcomeText(gymName: string): string {
-  return `Welcome to ${gymName}! Your fitness journey starts today. Stay active, stay healthy!`;
+/**
+ * Welcome WhatsApp queued at registration (§6, §7 Registration): the default password is
+ * "sent in the welcome WhatsApp with a request to change it". The password goes only into
+ * this queued message (and the one-time result shown to reception), never into logs.
+ */
+export function welcomeText(w: { memberName: string; gymName: string; gymShort: string; code: string; password: string }): string {
+  const first = w.memberName.trim().split(/\s+/)[0] ?? w.memberName;
+  return (
+    `Assalam o Alaikum ${first}, welcome to ${w.gymName}! Your member ID is ${w.code}. ` +
+    `Log in to the ${w.gymShort} app with your mobile number and temporary password ${w.password}. ` +
+    'Please change your password from Profile after logging in.'
+  );
 }
 
 /**

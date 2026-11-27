@@ -90,15 +90,19 @@ describe("contract: the web admin's API client against a live API server", () =>
     expect(kinds).toEqual(['receipt', 'welcome']);
   });
 
-  it('Add member without the optional first payment: no payment, no receipt, no due date; paying later sets it', async () => {
+  it('Add member without the optional first payment: no payment, no receipt, due from the joining date; paying later renews', async () => {
     const reg = await reception.registerMember({ name: 'Sara Khan', phone: '0321 7654321', joinedOn: today, planId: gym.planId, payment: null });
-    expect(reg).toMatchObject({ code: 'IH-0002', temporaryPassword: '654321', dueOn: null, payment: null });
+    expect(reg).toMatchObject({ code: 'IH-0002', temporaryPassword: '654321', dueOn: today, payment: null });
     const detail = await reception.member(reg.code);
-    expect(detail).toMatchObject({ dueOn: null, payments: [] });
+    expect(detail).toMatchObject({ dueOn: today, payments: [] });
     expect(detail.whatsapp.map((m) => [m.kind, m.body])).toEqual([
-      ['welcome', 'Welcome to Iron House Fitness! Your fitness journey starts today. Stay active, stay healthy!'],
+      [
+        'welcome',
+        'Assalam o Alaikum Sara, welcome to Iron House Fitness! Your member ID is IH-0002. Log in to the IH app with ' +
+          'your mobile number and temporary password 654321. Please change your password from Profile after logging in.',
+      ],
     ]);
-    expect(detail.whatsapp[0]!.link).toMatch(/^https:\/\/wa\.me\/923217654321\?text=Welcome%20to%20Iron%20House%20Fitness/);
+    expect(detail.whatsapp[0]!.link).toMatch(/^https:\/\/wa\.me\/923217654321\?text=Assalam%20o%20Alaikum%20Sara%2C%20welcome/);
     expect(await reception.payments({ member: reg.code })).toEqual([]);
 
     const paid = await reception.recordPayment({ memberCode: reg.code, amountPkr: 4000, method: 'cash' });
