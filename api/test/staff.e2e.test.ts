@@ -1,10 +1,10 @@
-import { addDays, addMonths, applyFreeze, formatShortDate, pkToday } from '@gym/shared';
-import { eq } from 'drizzle-orm';
+import { addDays, addMonths, ALREADY_FROZEN, applyFreeze, formatShortDate, FREEZE_ALREADY_PENDING, pkToday } from '@gym/shared';
+import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ALREADY_HANDLED } from '../src/approvals/approvals.service';
 import { hashPassword } from '../src/auth/passwords';
-import { checkins, dueDateChanges, gyms, members, payments, users } from '../src/db/schema';
+import { checkins, dueDateChanges, freezeRequests, gyms, members, payments, users } from '../src/db/schema';
 import { CANNOT_DISABLE_SELF } from '../src/setup/setup.service';
 import { OWNER_ONLY_DUE_DATE } from '../src/members/members.service';
 import { closeTestApp, createTestApp, type TestContext } from './helpers/app';
@@ -367,6 +367,48 @@ describe('staff routes: door, approvals, members, dashboard, messages, setup', (
         items: [{ exerciseId: 'bench', sets: 11, reps: 6, weightMode: 'fixed', kg: 60, pct: null, warmups: true, restSec: 120, note: null, canChange: false }],
       });
       expect(bad.body).toEqual({ message: 'Sets must be 1 to 10.' });
+    });
+  });
+
+  describe('freeze requests: one at a time, and none while frozen (§4.6, §7 Freeze)', () => {
+    const freeze = (token: string, days = 5) => http().post('/v1/me/freeze').set('Authorization', `Bearer ${token}`).send({ days, reason: 'travel' });
+    const pendingCount = async (memberId: string) =>
+      (await ctx.db.select().from(freezeRequests).where(and(eq(freezeRequests.memberId, memberId), eq(freezeRequests.status, 'pending')))).length;
+
+    it('refuses a second request while one is waiting; after reception rejects it, a new one is accepted', async () => {
+      const { memberId, token } = await member('IH-0050', '3001000050', addDays(today, 20));
+      const first = await freeze(token);
+      expect(first.status).toBe(201);
+      const second = await freeze(token, 10);
+      expect(second.status).toBe(400);
+      expect(second.body).toEqual({ message: FREEZE_ALREADY_PENDING });
+      expect(await pendingCount(memberId)).toBe(1);
+
+      expect((await as(t.reception).post(`/v1/freeze-requests/${first.body.id}/reject`)).status).toBe(200);
+      expect((await freeze(token)).status).toBe(201);
+    });
+
+    it('two requests sent at the same moment: only one is saved', async () => {
+      const { memberId, token } = await member('IH-0051', '3001000051', addDays(today, 20));
+      const results = await Promise.all([freeze(token), freeze(token, 7)]);
+      expect(results.map((r) => r.status).sort()).toEqual([201, 400]);
+      expect(results.find((r) => r.status === 400)!.body).toEqual({ message: FREEZE_ALREADY_PENDING });
+      expect(await pendingCount(memberId)).toBe(1);
+    });
+
+    it('refuses a request while the membership is frozen (including the last frozen day), and accepts one after the freeze ends', async () => {
+      const { memberId, token } = await member('IH-0052', '3001000052', addDays(today, 20));
+      const req = await freeze(token);
+      await as(t.reception).post(`/v1/freeze-requests/${req.body.id}/approve`);
+      const frozen = await freeze(token);
+      expect(frozen.status).toBe(400);
+      expect(frozen.body).toEqual({ message: ALREADY_FROZEN });
+
+      await ctx.db.update(members).set({ frozenUntil: today }).where(eq(members.userId, memberId));
+      expect((await freeze(token)).body).toEqual({ message: ALREADY_FROZEN });
+
+      await ctx.db.update(members).set({ frozenUntil: addDays(today, -1) }).where(eq(members.userId, memberId));
+      expect((await freeze(token)).status).toBe(201);
     });
   });
 });

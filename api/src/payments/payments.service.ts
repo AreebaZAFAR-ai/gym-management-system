@@ -1,6 +1,7 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   addDays,
+  addMonths,
   paymentPeriod,
   pkToday,
   type Payment,
@@ -17,6 +18,24 @@ import { gyms, members, payments, plans, users } from '../db/schema';
 import { queueWhatsapp, receiptText, renewedMessage, type Executor } from '../whatsapp/whatsapp';
 
 export const MEMBER_NOT_FOUND = 'Member not found.';
+/** §11 Performance: a payment list is at most 13 months, so it stays fast as history grows. */
+export const MAX_PAYMENT_RANGE_MONTHS = 13;
+export const RANGE_TOO_LONG = 'Choose a date range of 13 months or less.';
+export const RANGE_BACKWARDS = 'The start date must be on or before the end date.';
+
+/**
+ * The Pakistan-date range for GET payments. No dates: the current month. Only "from":
+ * up to today (or that day, if later). Only "to": from the first of that month.
+ * A member's list (?member=) with no dates is their full history.
+ */
+export function paymentRange(q: { from?: string; to?: string; member?: string }, today: string): { from: string; to: string } | null {
+  if (!q.from && !q.to && q.member) return null;
+  const to = q.to ?? (q.from && q.from > today ? q.from : today);
+  const from = q.from ?? `${to.slice(0, 8)}01`;
+  if (from > to) throw new BadRequestException(RANGE_BACKWARDS);
+  if (to > addMonths(from, MAX_PAYMENT_RANGE_MONTHS)) throw new BadRequestException(RANGE_TOO_LONG);
+  return { from, to };
+}
 
 export const paymentMethod = z.enum(['cash', 'jazzcash', 'easypaisa', 'bank'], { error: 'Choose a payment method.' });
 /** Whole rupees (the column is an integer). */
@@ -126,12 +145,18 @@ export class PaymentsService {
     );
   }
 
-  /** GET payments?from&to&member — Pakistan dates, inclusive; member = member ID (IH-0412). Newest first. */
+  /**
+   * GET payments?from&to&member — Pakistan dates, inclusive; member = member ID (IH-0412).
+   * Newest first. Defaults to this month; at most 13 months (see paymentRange).
+   */
   async list(staff: Principal, query: unknown): Promise<Payment[]> {
     const q = parse(listQuery, query);
+    const range = paymentRange(q, pkToday());
     const where: SQL[] = [eq(payments.gymId, staff.gymId)];
-    if (q.from) where.push(gte(payments.createdAt, pkDayStart(q.from)));
-    if (q.to) where.push(lt(payments.createdAt, pkDayStart(addDays(q.to, 1))));
+    if (range) {
+      where.push(gte(payments.createdAt, pkDayStart(range.from)));
+      where.push(lt(payments.createdAt, pkDayStart(addDays(range.to, 1))));
+    }
     if (q.member) where.push(eq(members.code, q.member));
 
     const rows = await this.db

@@ -5,6 +5,8 @@ import {
   deriveMemberKey,
   entryDecision,
   heaviestSet,
+  ALREADY_FROZEN,
+  FREEZE_ALREADY_PENDING,
   isValidFreezeDays,
   membershipStatus,
   pkToday,
@@ -311,9 +313,19 @@ export class MeService {
   async requestFreeze(user: Principal, body: unknown): Promise<FreezeRequestSummary> {
     const { days, reason } = parse(freezeBody, body);
     if (!isValidFreezeDays(days)) throw new BadRequestException('A freeze must be 3 to 15 days.');
-    await this.member(user);
-    const [row] = await this.db.insert(freezeRequests).values({ gymId: user.gymId, memberId: user.id, days, reason }).returning();
-    return { id: row!.id, days: row!.days, reason: row!.reason, status: row!.status, createdAt: row!.createdAt.toISOString() };
+    const row = await this.db.transaction(async (tx) => {
+      // Lock the member row so two requests sent at once cannot both pass the checks.
+      const [m] = await tx.select({ frozenUntil: members.frozenUntil }).from(members)
+        .where(and(eq(members.gymId, user.gymId), eq(members.userId, user.id))).for('update');
+      if (!m) throw new UnauthorizedException('Please log in again.');
+      if (m.frozenUntil && pkToday() <= m.frozenUntil) throw new BadRequestException(ALREADY_FROZEN);
+      const [pending] = await tx.select({ id: freezeRequests.id }).from(freezeRequests)
+        .where(and(eq(freezeRequests.gymId, user.gymId), eq(freezeRequests.memberId, user.id), eq(freezeRequests.status, 'pending')));
+      if (pending) throw new BadRequestException(FREEZE_ALREADY_PENDING);
+      const [inserted] = await tx.insert(freezeRequests).values({ gymId: user.gymId, memberId: user.id, days, reason }).returning();
+      return inserted!;
+    });
+    return { id: row.id, days: row.days, reason: row.reason, status: row.status, createdAt: row.createdAt.toISOString() };
   }
 
   // ---------- Helpers ----------

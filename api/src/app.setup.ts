@@ -1,4 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
+import compression from 'compression';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
 import { ErrorFilter } from './common/error.filter';
@@ -13,6 +14,10 @@ export function configureApp(app: INestApplication): void {
   app.useGlobalFilters(new ErrorFilter());
 
   if (env.NODE_ENV === 'production') requireHttps(app as NestExpressApplication);
+
+  // §11: weak gym Wi-Fi and 4G. Brotli when the client accepts it, otherwise gzip;
+  // responses under 1 KB are sent as they are.
+  app.use(compression());
 
   // The mobile app does not need CORS. Browsers (the web admin) only from the listed origins.
   const origins = corsOrigins(env);

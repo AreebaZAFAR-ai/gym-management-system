@@ -97,6 +97,10 @@ export function applyFreeze<D extends string | null>(
   return { dueOn: (dueOn === null ? null : addDays(dueOn, days)) as D, frozenUntil: addDays(today, days - 1) };
 }
 
+/** Freeze requests (§4.6, §7): one at a time, and not while already frozen. */
+export const FREEZE_ALREADY_PENDING = 'You already have a freeze request waiting for reception.';
+export const ALREADY_FROZEN = 'Your membership is already frozen.';
+
 export function isValidFreezeDays(days: number): boolean {
   return Number.isInteger(days) && days >= FREEZE_MIN_DAYS && days <= FREEZE_MAX_DAYS;
 }

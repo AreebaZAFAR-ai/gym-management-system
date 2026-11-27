@@ -4,7 +4,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { gyms, members, payments, plans, users, whatsappMessages } from '../src/db/schema';
 import { CHOOSE_GYM_TRAINER, DUPLICATE_FINGERPRINT, DUPLICATE_PHONE, HIDDEN_PLAN } from '../src/members/members.service';
-import { MEMBER_NOT_FOUND } from '../src/payments/payments.service';
+import { MEMBER_NOT_FOUND, RANGE_BACKWARDS, RANGE_TOO_LONG } from '../src/payments/payments.service';
 import { closeTestApp, createTestApp, type TestContext } from './helpers/app';
 import { registerMember } from './helpers/seed';
 import { login, seedGym, type GymFixture } from './helpers/staff';
@@ -363,6 +363,57 @@ describe('member registration and membership payments', () => {
       const res = await as(receptionA).get('/v1/payments?from=25-11-2026');
       expect(res.status).toBe(400);
       expect(res.body).toEqual({ message: '"from" must be a date like 2026-11-25.' });
+    });
+
+    describe('§11: default range and the 13-month limit', () => {
+      const monthStart = `${today.slice(0, 8)}01`;
+      const lastMonth = addDays(monthStart, -15);
+      const longAgo = addMonths(today, -20);
+      const ids = (res: request.Response) => res.body.map((p: { amountPkr: number }) => p.amountPkr);
+
+      beforeAll(async () => {
+        const [m] = await ctx.db.select().from(members).where(eq(members.code, 'IH-0901'));
+        // Older payments (append-only: inserting history is allowed). 12:00 PKT on each day.
+        for (const [day, amount] of [[lastMonth, 1111], [longAgo, 2222]] as const) {
+          await ctx.db.insert(payments).values({
+            gymId: 'gym-a', memberId: m!.userId, amountPkr: amount, method: 'cash', periodFrom: day, periodTo: addMonths(day, 1),
+            recordedBy: a.reception.id, createdAt: new Date(`${day}T07:00:00Z`),
+          });
+        }
+      });
+
+      it('with no dates, lists only this month (Pakistan time)', async () => {
+        const res = await as(receptionA).get('/v1/payments');
+        expect(res.status).toBe(200);
+        expect(ids(res)).not.toContain(1111);
+        expect(ids(res)).not.toContain(2222);
+        expect(res.body.every((p: { createdAt: string }) => p.createdAt >= `${addDays(monthStart, -1)}T19:00:00.000Z`)).toBe(true);
+      });
+
+      it('only "from": up to today; only "to": from the first of that month', async () => {
+        expect(ids(await as(receptionA).get(`/v1/payments?from=${lastMonth}`))).toContain(1111);
+        const toOnly = await as(receptionA).get(`/v1/payments?to=${lastMonth}`);
+        expect(ids(toOnly)).toEqual([1111]);
+      });
+
+      it("?member= with no dates returns that member's full history", async () => {
+        const res = await as(receptionA).get('/v1/payments?member=IH-0901');
+        expect(res.status).toBe(200);
+        expect(ids(res)).toEqual(expect.arrayContaining([1111, 2222]));
+      });
+
+      it('accepts exactly 13 months; refuses a longer range, an open "from" far back, and a backwards range', async () => {
+        const from13 = addMonths(today, -13);
+        expect((await as(receptionA).get(`/v1/payments?from=${from13}&to=${today}`)).status).toBe(200);
+        for (const q of [`from=${addDays(from13, -1)}&to=${today}`, `from=${longAgo}`, `from=${longAgo}&to=${today}&member=IH-0901`]) {
+          const res = await as(receptionA).get(`/v1/payments?${q}`);
+          expect(res.status).toBe(400);
+          expect(res.body).toEqual({ message: RANGE_TOO_LONG });
+        }
+        const back = await as(receptionA).get(`/v1/payments?from=${today}&to=${addDays(today, -1)}`);
+        expect(back.status).toBe(400);
+        expect(back.body).toEqual({ message: RANGE_BACKWARDS });
+      });
     });
   });
 });
