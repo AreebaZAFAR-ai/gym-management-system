@@ -62,10 +62,20 @@ describe('member registration and membership payments', () => {
       expect(m).toMatchObject({ code: 'IH-0001', dueOn: due, joinedOn: today, planId: a.planId, trainerId: a.trainer.id, goal: 'strength', gender: 'male' });
     });
 
-    it('§7: saving the registration payment queues the WhatsApp receipt (welcome message pending: no wording in the PDF)', async () => {
+    it('§6/§7: registration queues the welcome WhatsApp with the gym name', async () => {
       const msgs = await ctx.db.select().from(whatsappMessages).where(eq(whatsappMessages.memberId, reg.body.memberId));
-      expect(msgs.map((x) => x.kind)).toEqual(['receipt']);
-      const receipt = msgs[0];
+      const welcome = msgs.filter((x) => x.kind === 'welcome');
+      expect(welcome).toHaveLength(1);
+      expect(welcome[0]).toMatchObject({
+        status: 'queued', toPhone: '3001234567',
+        body: 'Welcome to Iron House Fitness! Your fitness journey starts today. Stay active, stay healthy!',
+      });
+    });
+
+    it('§7: saving the registration payment queues the WhatsApp receipt', async () => {
+      const msgs = await ctx.db.select().from(whatsappMessages).where(eq(whatsappMessages.memberId, reg.body.memberId));
+      expect(msgs.map((x) => x.kind).sort()).toEqual(['receipt', 'welcome']);
+      const receipt = msgs.find((x) => x.kind === 'receipt');
       expect(receipt).toMatchObject({ status: 'queued', toPhone: '3001234567' });
       expect(receipt!.body).toBe(
         `Assalam o Alaikum Ali, we received PKR 4,000 by JazzCash at Iron House Fitness. Your membership is paid till ${formatShortDate(addMonths(today, 1))}. Thank you!`,
@@ -107,11 +117,50 @@ describe('member registration and membership payments', () => {
       expect(dup.body).toEqual({ message: DUPLICATE_FINGERPRINT });
     });
 
-    it('registration requires the first payment', async () => {
-      const res = await as(receptionA).post('/v1/members', newMember({ phone: '03003330000', payment: undefined }));
+    describe('§6 "Optional first payment": registering without a payment', () => {
+      let unpaid: request.Response;
+
+      beforeAll(async () => {
+        unpaid = await as(receptionA).post('/v1/members', newMember({ phone: '03003330000', payment: undefined }));
+      });
+
+      it('registers the member with no payment, no receipt and no due date', async () => {
+        expect(unpaid.status).toBe(201);
+        expect(unpaid.body).toMatchObject({ temporaryPassword: '330000', dueOn: null, payment: null });
+        expect(await ctx.db.select().from(payments).where(eq(payments.memberId, unpaid.body.memberId))).toEqual([]);
+        const [m] = await ctx.db.select().from(members).where(eq(members.userId, unpaid.body.memberId));
+        expect(m?.dueOn).toBeNull();
+        expect((await as(receptionA).post('/v1/members', newMember({ phone: '03003330001', payment: null }))).status).toBe(201);
+      });
+
+      it('queues only the welcome WhatsApp', async () => {
+        const msgs = await ctx.db.select().from(whatsappMessages).where(eq(whatsappMessages.memberId, unpaid.body.memberId));
+        expect(msgs.map((x) => [x.kind, x.body])).toEqual([
+          ['welcome', 'Welcome to Iron House Fitness! Your fitness journey starts today. Stay active, stay healthy!'],
+        ]);
+      });
+
+      it('the member list and member page show no due date', async () => {
+        const detail = await as(receptionA).get(`/v1/members/${unpaid.body.code}`);
+        expect(detail.body).toMatchObject({ dueOn: null, payments: [] });
+        const listed = (await as(receptionA).get('/v1/members?q=3330000')).body;
+        expect(listed.map((m: { dueOn: string | null }) => m.dueOn)).toEqual([null]);
+      });
+
+      it('§7 recording the first payment later: no due date to extend, so the period starts today; receipt queued', async () => {
+        const res = await as(receptionA).post('/v1/payments', { memberCode: unpaid.body.code, amountPkr: 4000, method: 'cash' });
+        expect(res.status).toBe(201);
+        expect(res.body.payment).toMatchObject({ periodFrom: today, periodTo: addMonths(today, 1) });
+        expect(res.body.newDueOn).toBe(addMonths(today, 1));
+        const kinds = (await ctx.db.select().from(whatsappMessages).where(eq(whatsappMessages.memberId, unpaid.body.memberId))).map((x) => x.kind);
+        expect(kinds.sort()).toEqual(['receipt', 'welcome']);
+      });
+    });
+
+    it('a payment, when given, must have a valid amount and method', async () => {
+      const res = await as(receptionA).post('/v1/members', newMember({ phone: '03003330009', payment: { amountPkr: 4000 } }));
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ message: 'Registration needs the first membership payment.' });
-      expect(await ctx.db.select().from(users).where(eq(users.phone, '3003330000'))).toHaveLength(0);
+      expect(await ctx.db.select().from(users).where(eq(users.phone, '3003330009'))).toHaveLength(0);
     });
 
     it('validates the form', async () => {

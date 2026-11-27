@@ -1,13 +1,17 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { pkToday, type Announcement, type WhatsAppMessage } from '@gym/shared';
-import { and, desc, eq } from 'drizzle-orm';
+import { addDays, pkToday, type Announcement, type FeeRemindersResponse, type WhatsAppMessage } from '@gym/shared';
+import { and, desc, eq, gte } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Principal } from '../auth/auth.decorators';
 import { parse, uuidParam } from '../common/validation';
 import { DB, type Database } from '../db/db.module';
-import { announcements, users, whatsappMessages } from '../db/schema';
+import { announcements, gyms, users, whatsappMessages } from '../db/schema';
 import { selectMembers, toListItem } from '../members/member-view';
-import { queueWhatsapp, toWhatsAppMessage } from '../whatsapp/whatsapp';
+import { queueWhatsapp, reminderText, toWhatsAppMessage } from '../whatsapp/whatsapp';
+
+/** §7: "Fee reminders go to overdue members and those due within 3 days, at most once in 7 days per member." */
+export const REMINDER_DUE_WITHIN_DAYS = 3;
+export const REMINDER_EVERY_DAYS = 7;
 
 export const MESSAGE_NOT_FOUND = 'Message not found.';
 export const ANNOUNCEMENT_NOT_FOUND = 'Announcement not found.';
@@ -22,11 +26,7 @@ const announcementBody = z.object({
   sendWhatsApp: z.boolean().optional(),
 });
 
-/**
- * §6 WhatsApp and Announcements; §7 WhatsApp log.
- * Unresolved: POST whatsapp/reminders ("Add fee reminders") is not implemented
- * because the PDF gives no reminder wording.
- */
+/** §6 WhatsApp and Announcements; §7 WhatsApp log. */
 @Injectable()
 export class MessagesService {
   constructor(@Inject(DB) private readonly db: Database) {}
@@ -53,6 +53,42 @@ export class MessagesService {
     if (!m) throw new NotFoundException(MESSAGE_NOT_FOUND);
     const [u] = m.memberId ? await this.db.select({ name: users.name }).from(users).where(eq(users.id, m.memberId)) : [];
     return toWhatsAppMessage(m, u?.name ?? null);
+  }
+
+  /**
+   * POST whatsapp/reminders — §6 "Add fee reminders", §7 WhatsApp log.
+   * Queues a reminder for every member whose §7 status is Overdue or whose due date is
+   * within the next 3 days, skipping frozen members and anyone sent (queued) a reminder
+   * in the last 7 days.
+   */
+  async queueReminders(staff: Principal): Promise<FeeRemindersResponse> {
+    return this.db.transaction(async (tx) => {
+      const today = pkToday();
+      const [gym] = await tx.select({ name: gyms.name }).from(gyms).where(eq(gyms.id, staff.gymId));
+      const since = new Date(Date.now() - REMINDER_EVERY_DAYS * 24 * 60 * 60 * 1000);
+      const recent = await tx.select({ memberId: whatsappMessages.memberId }).from(whatsappMessages)
+        .where(and(eq(whatsappMessages.gymId, staff.gymId), eq(whatsappMessages.kind, 'reminder'), gte(whatsappMessages.createdAt, since)));
+      const remindedRecently = new Set(recent.map((r) => r.memberId));
+      const dueBy = addDays(today, REMINDER_DUE_WITHIN_DAYS);
+
+      let queued = 0;
+      for (const m of await selectMembers(tx, staff.gymId)) {
+        if (remindedRecently.has(m.memberId)) continue;
+        // Frozen members get no reminder (§7 status order checks Frozen first). A member with
+        // no payment recorded has no due date, so is neither overdue nor due within 3 days.
+        const status = toListItem(m, today).status;
+        if (status === 'frozen' || m.dueOn === null) continue;
+        const overdue = status === 'overdue';
+        const dueSoon = m.dueOn >= today && m.dueOn <= dueBy;
+        if (!overdue && !dueSoon) continue;
+        await queueWhatsapp(tx, {
+          gymId: staff.gymId, memberId: m.memberId, toPhone: m.phone, kind: 'reminder',
+          body: reminderText(m.name, gym!.name, m.feePkr, m.dueOn, overdue),
+        });
+        queued++;
+      }
+      return { queued };
+    });
   }
 
   /** GET announcements — any signed-in user of the gym (§10 Shared). */

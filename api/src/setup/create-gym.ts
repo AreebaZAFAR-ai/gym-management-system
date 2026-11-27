@@ -25,6 +25,11 @@ export const createGymInput = z.object({
     return n ?? '';
   }),
   ownerPassword: z.string({ error: 'Owner password is required (OWNER_PASSWORD).' }).min(1, 'Owner password is required (OWNER_PASSWORD).'),
+  /** Contact details, set by self-registration; the super-admin script leaves them empty. */
+  email: z.string().trim().toLowerCase().nullish(),
+  phone: z.string().trim().nullish(),
+  address: z.string().trim().nullish(),
+  ownerEmail: z.string().trim().toLowerCase().nullish(),
 });
 export type CreateGymInput = z.input<typeof createGymInput>;
 
@@ -35,9 +40,10 @@ export async function createGym(db: Database, raw: CreateGymInput): Promise<{ gy
     await tx.insert(gyms).values({
       id: input.id, name: input.name, short: input.short, city: input.city, primaryColor: input.primaryColor,
       memberPrefix: input.memberPrefix, checkinSecret: randomBytes(32).toString('base64url'),
+      email: input.email ?? null, phone: input.phone ?? null, address: input.address ?? null,
     });
     const [owner] = await tx.insert(users)
-      .values({ gymId: input.id, phone: input.ownerPhone, name: input.ownerName, role: 'owner', passwordHash })
+      .values({ gymId: input.id, phone: input.ownerPhone, name: input.ownerName, role: 'owner', passwordHash, email: input.ownerEmail ?? null })
       .returning({ id: users.id });
     return { gymId: input.id, ownerId: owner!.id };
   });

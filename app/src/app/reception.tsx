@@ -135,7 +135,7 @@ function Reception() {
                 label={t.reception.typeId}
                 value={typed}
                 onChangeText={setTyped}
-                placeholder={t.reception.idPlaceholder}
+                placeholder={t.reception.idPlaceholder(BRAND.short)}
                 autoCapitalize="characters"
                 autoCorrect={false}
                 returnKeyType="go"
@@ -187,7 +187,8 @@ function ResultCard({
         </Row>
         <Txt>{m.planName}</Txt>
         <Txt variant="small">
-          {formatPhone(m.phone)} · {t.reception.dueOn(formatShortDate(m.dueOn))}
+          {formatPhone(m.phone)}
+          {m.dueOn ? ` · ${t.reception.dueOn(formatShortDate(m.dueOn))}` : ''}
         </Txt>
       </Card>
 

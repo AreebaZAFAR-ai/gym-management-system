@@ -1,0 +1,33 @@
+# Spec §13 deliverable: "Automated tests running in GitHub Actions on every push".
+# Database tests use in-memory PGlite; no database secrets are needed or used.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck (shared, api, app, admin)
+        run: npm run typecheck
+      - name: Tests (shared rules, API end-to-end on PGlite, contract tests)
+        run: npm test
+      - name: Build the web admin
+        run: npm --workspace admin run build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.example.invalid
+          NEXT_TELEMETRY_DISABLED: '1'
+      - name: Build the API
+        run: npm --workspace api run build

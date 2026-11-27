@@ -133,19 +133,19 @@ describe('database schema (migrations applied to PGlite)', () => {
     expect(await dbError(() => registerA('GA-0001'))).toMatch(/members_gym_code_unique/);
   });
 
-  describe('registration requires a membership payment', () => {
-    it('rejects a member saved without a payment', async () => {
+  describe('§6 Add member: optional first payment (migration 0003)', () => {
+    it('accepts a member saved without a payment and with no due date', async () => {
       const userId = (await db.insert(users).values({ gymId: 'gym-a', phone: nextPhone(), name: 'No pay', role: 'member', passwordHash: 'x' }).returning())[0]!.id;
-      const msg = await dbError(() =>
-        db.insert(members).values({ userId, gymId: 'gym-a', code: 'GA-0900', planId: ids.aPlan, joinedOn: '2026-11-25', dueOn: '2026-12-25' }),
-      );
-      expect(msg).toMatch(/a member must be registered with a membership payment/);
-      expect(await db.select().from(members).where(eq(members.userId, userId))).toHaveLength(0);
+      await db.insert(members).values({ userId, gymId: 'gym-a', code: 'GA-0900', planId: ids.aPlan, joinedOn: '2026-11-25', dueOn: null });
+      const [m] = await db.select().from(members).where(eq(members.userId, userId));
+      expect(m?.dueOn).toBeNull();
+      expect(await db.select().from(payments).where(eq(payments.memberId, userId))).toHaveLength(0);
     });
 
-    it('rejects a member with no due date', async () => {
-      const msg = await dbError(() => registerA('GA-0901', { dueOn: null as unknown as string }));
-      expect(msg).toMatch(/null value in column "due_on"/);
+    it('the 0001 payment-required trigger and its function are removed', async () => {
+      const t = await pglite.query(`select 1 from pg_trigger where tgname = 'members_require_payment'`);
+      const f = await pglite.query(`select 1 from pg_proc where proname = 'check_member_has_payment'`);
+      expect([t.rows.length, f.rows.length]).toEqual([0, 0]);
     });
 
     it('accepts a member saved together with the payment', async () => {

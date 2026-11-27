@@ -17,6 +17,9 @@ import { MessagesController } from './messages/messages.controller';
 import { MessagesService } from './messages/messages.service';
 import { PaymentsController } from './payments/payments.controller';
 import { PaymentsService } from './payments/payments.service';
+import { RegisterLimiter } from './registration/register-limiter';
+import { RegistrationController } from './registration/registration.controller';
+import { RegistrationService } from './registration/registration.service';
 import { SetupController } from './setup/setup.controller';
 import { SetupService } from './setup/setup.service';
 import { TrainerController } from './trainer/trainer.controller';
@@ -35,6 +38,7 @@ import { TrainerService } from './trainer/trainer.service';
     MessagesController,
     SetupController,
     TrainerController,
+    RegistrationController,
   ],
   providers: [
     FileStore,
@@ -46,6 +50,8 @@ import { TrainerService } from './trainer/trainer.service';
     MessagesService,
     SetupService,
     TrainerService,
+    RegistrationService,
+    RegisterLimiter,
   ],
 })
 export class AppModule {}

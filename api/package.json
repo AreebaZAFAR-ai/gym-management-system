@@ -21,6 +21,7 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1178.0",
     "@gym/shared": "1.0.0",
     "@nestjs/common": "^11.2.11",
     "@nestjs/core": "^11.2.11",

@@ -147,7 +147,8 @@ export class ApprovalsService {
   }
 }
 
-function toFreezeItem(f: typeof freezeRequests.$inferSelect, code: string, name: string, dueOn: string, today: string): FreezeRequestItem {
+/** `dueOn` is null for a member with no payment yet: there is no due date to move (§7 Freeze). */
+function toFreezeItem(f: typeof freezeRequests.$inferSelect, code: string, name: string, dueOn: string | null, today: string): FreezeRequestItem {
   return {
     id: f.id, memberId: f.memberId, memberCode: code, memberName: name, days: f.days, reason: f.reason, status: f.status,
     createdAt: f.createdAt.toISOString(), dueOn, newDueOn: applyFreeze(dueOn, f.days, today).dueOn,

@@ -22,10 +22,12 @@ export class DashboardService {
     const monthStart = `${today.slice(0, 7)}-01`;
     const list = (await selectMembers(this.db, staff.gymId)).map((m) => toListItem(m, today));
     // §6 lists: "overdue, and due in the next 5 days".
-    const overdue = list.filter((m) => m.status === 'overdue').sort((a, b) => a.dueOn.localeCompare(b.dueOn));
+    // Members with no payment yet have no due date, so they are in neither list.
+    const byDue = (a: { dueOn: string | null }, b: { dueOn: string | null }) => (a.dueOn ?? '').localeCompare(b.dueOn ?? '');
+    const overdue = list.filter((m) => m.status === 'overdue').sort(byDue);
     const dueSoon = list
-      .filter((m) => m.dueOn >= today && m.dueOn <= addDays(today, DUE_SOON_DAYS))
-      .sort((a, b) => a.dueOn.localeCompare(b.dueOn));
+      .filter((m) => m.dueOn !== null && m.dueOn >= today && m.dueOn <= addDays(today, DUE_SOON_DAYS))
+      .sort(byDue);
 
     const [joined] = await this.db.select({ n: sql<number>`count(*)::int` }).from(members)
       .where(and(eq(members.gymId, staff.gymId), gte(members.joinedOn, monthStart)));
@@ -91,7 +93,8 @@ export class DashboardService {
     const visited = new Set(recent.map((r) => r.memberId));
     const mightQuit = (await selectMembers(this.db, staff.gymId))
       .map((m) => toListItem(m, today))
-      .filter((m) => m.dueOn >= today && !visited.has(m.memberId))
+      // A member with no payment recorded (no due date) is not "paid-up".
+      .filter((m) => m.dueOn !== null && m.dueOn >= today && !visited.has(m.memberId))
       .sort((a, b) => a.name.localeCompare(b.name));
 
     return {

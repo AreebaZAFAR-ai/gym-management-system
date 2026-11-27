@@ -52,11 +52,19 @@ try {
   const [{ n: fks }] = await q(`select count(*)::int n from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname='public' and c.contype='f'`);
   ok(`${idx} indexes, ${cons} constraints (${fks} foreign keys)`);
   const triggers = (await q(`select tgname from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not t.tgisinternal order by 1`)).map((r) => r.tgname);
-  triggers.length === 6 ? ok(`6 triggers: ${triggers.join(', ')}`) : bad('trigger count', triggers.join(', '));
+  // 0003 removed the members_require_payment trigger and check_member_has_payment() (§6 optional first payment).
+  triggers.length === 5 && !triggers.includes('members_require_payment') ? ok(`5 triggers: ${triggers.join(', ')}`) : bad('triggers', triggers.join(', '));
   const fns = (await q(`select proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' order by 1`)).map((r) => r.proname);
-  fns.length === 5 ? ok(`5 functions: ${fns.join(', ')}`) : bad('function count', fns.join(', '));
+  fns.length === 4 && !fns.includes('check_member_has_payment') ? ok(`4 functions: ${fns.join(', ')}`) : bad('functions', fns.join(', '));
   const migrations = await q(`select count(*)::int n from drizzle.__drizzle_migrations`);
-  migrations[0].n === 3 ? ok('3 migrations recorded') : bad('migrations recorded', String(migrations[0].n));
+  migrations[0].n === 5 ? ok('5 migrations recorded') : bad('migrations recorded', String(migrations[0].n));
+  // 0004 gym self-registration: contact columns and case-insensitive unique emails.
+  const regCols = (await q(`select table_name || '.' || column_name c from information_schema.columns where table_schema='public' and ((table_name='gyms' and column_name in ('email','phone','address')) or (table_name='users' and column_name='email')) order by 1`)).map((r) => r.c);
+  regCols.length === 4 ? ok(`registration columns: ${regCols.join(', ')}`) : bad('registration columns', regCols.join(', '));
+  const regIdx = (await q(`select indexname from pg_indexes where schemaname='public' and indexname in ('gyms_email_ci_unique','users_email_ci_unique') order by 1`)).map((r) => r.indexname);
+  regIdx.length === 2 ? ok(`unique email indexes: ${regIdx.join(', ')}`) : bad('unique email indexes', regIdx.join(', '));
+  const [{ nullable }] = await q(`select is_nullable = 'YES' as nullable from information_schema.columns where table_schema='public' and table_name='members' and column_name='due_on'`);
+  nullable ? ok('members.due_on allows no due date (optional first payment)') : bad('members.due_on is still NOT NULL');
   const [{ n: builtIn }] = await q(`select count(*)::int n from exercises where gym_id is null`);
   builtIn === 17 ? ok('17 built-in exercises') : bad('built-in exercises', String(builtIn));
   const rows = await q(`select relname, n_live_tup::int n from pg_stat_user_tables where schemaname='public' and relname <> 'exercises' and n_live_tup > 0`);
@@ -75,15 +83,12 @@ try {
   const memberA = await user('verify-a', '3000000002', 'member');
   const memberB = await user('verify-b', '3000000002', 'member');
 
-  await expectReject('member without a payment is refused (deferred check)', [
-    [`insert into members (user_id,gym_id,code,plan_id,joined_on,due_on) values ($1,'verify-a','V-1',$2,'2026-11-01','2026-12-01')`, [memberA, planA]],
-    ['set constraints members_require_payment immediate', []],
-  ], null, /must be registered with a membership payment/);
+  const unpaid = await user('verify-a', '3000000009', 'member');
+  await q(`insert into members (user_id,gym_id,code,plan_id,joined_on,due_on) values ($1,'verify-a','V-9',$2,'2026-11-01',null)`, [unpaid, planA]);
+  ok('member without a first payment (no due date) is accepted');
 
-  await client.query(`set constraints members_require_payment deferred`);
   await q(`insert into members (user_id,gym_id,code,plan_id,joined_on,due_on) values ($1,'verify-a','V-1',$2,'2026-11-01','2026-12-01')`, [memberA, planA]);
   const pay = (await q(`insert into payments (gym_id,member_id,amount_pkr,method,period_from,period_to,recorded_by) values ('verify-a',$1,4000,'cash','2026-11-01','2026-12-01',$2) returning id`, [memberA, recA]))[0].id;
-  await client.query(`set constraints members_require_payment immediate`);
   ok('member with its payment is accepted');
 
   await expectReject('payments: UPDATE blocked', `update payments set amount_pkr=1 where id=$1`, [pay], /append-only: UPDATE/);

@@ -118,7 +118,7 @@ export default function Profile() {
         <InfoRow label={t.profile.plan} value={m.planTiming ? `${m.planName} · ${m.planTiming}` : m.planName} />
         <InfoRow
           label={t.profile.dueDate}
-          value={formatShortDate(m.dueOn)}
+          value={m.dueOn ? formatShortDate(m.dueOn) : '—'}
           color={m.status === 'overdue' ? colors.red : undefined}
         />
         <InfoRow label={t.profile.amount} value={formatPKR(m.feePkr)} />
@@ -246,7 +246,7 @@ function InfoRow({ label, value, color, last }: { label: string; value: ReactNod
 
 const REASONS: FreezeReason[] = ['travel', 'illness', 'other'];
 
-function FreezeForm({ dueOn, onCancel, onSent }: { dueOn: string; onCancel: () => void; onSent: () => void }) {
+function FreezeForm({ dueOn, onCancel, onSent }: { dueOn: string | null; onCancel: () => void; onSent: () => void }) {
   const [reason, setReason] = useState<FreezeReason>('travel');
   const [days, setDays] = useState(7);
   const [busy, setBusy] = useState(false);
@@ -276,9 +276,12 @@ function FreezeForm({ dueOn, onCancel, onSent }: { dueOn: string; onCancel: () =
       />
       <Txt variant="section">{t.profile.freezeDays}</Txt>
       <Stepper big value={days} min={FREEZE_MIN_DAYS} max={FREEZE_MAX_DAYS} onChange={setDays} unit="days" />
-      <Txt center variant="label">
-        {t.profile.freezeNewDue(formatShortDate(addDays(dueOn, days)))}
-      </Txt>
+      {/* No due date yet (no payment recorded): there is no new due date to show. */}
+      {dueOn ? (
+        <Txt center variant="label">
+          {t.profile.freezeNewDue(formatShortDate(addDays(dueOn, days)))}
+        </Txt>
+      ) : null}
       {error ? <Banner tone="error" text={error} /> : null}
       <Row>
         <Button style={{ flex: 1 }} kind="secondary" label={t.common.cancel} onPress={onCancel} />

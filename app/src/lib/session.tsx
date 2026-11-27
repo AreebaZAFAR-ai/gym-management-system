@@ -53,7 +53,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     onUnauthorized(() => void clear());
     (async () => {
-      const [token, rawUser] = await Promise.all([secure.get(KEYS.token), secure.get(KEYS.user)]);
+      let token: string | null;
+      let rawUser: string | null;
+      try {
+        [token, rawUser] = await Promise.all([secure.get(KEYS.token), secure.get(KEYS.user)]);
+      } catch (e) {
+        // Secure storage unreadable (e.g. Android keystore reset): the saved login
+        // is unusable, so start signed out instead of waiting on the splash forever.
+        console.warn('Could not restore saved login', e);
+        await clear().catch(() => setState({ status: 'signedOut' }));
+        return;
+      }
       if (!token || !rawUser) {
         // Not remembered: drop anything left from the last session on this phone,
         // including unsent sets, so they can never be sent under someone else's login.

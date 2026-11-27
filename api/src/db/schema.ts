@@ -139,9 +139,19 @@ export const gyms = pgTable('gyms', {
   deviceAddress: text('device_address'),
   /** §6 Settings: device key; §10 sent by the machine as x-device-key. */
   deviceKey: text('device_key'),
+  /**
+   * Contact details given at self-registration (web admin "Register your gym").
+   * Null for gyms created by the super-admin script. Not used for login (§2).
+   */
+  email: text('email'),
+  phone: text('phone'),
+  address: text('address'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+}, (t) => [
+  // One registration per gym email, ignoring case.
+  uniqueIndex('gyms_email_ci_unique').on(sql`lower(${t.email})`),
+]);
 
 // ---------- users ----------
 
@@ -156,6 +166,11 @@ export const users = pgTable(
     role: roleEnum('role').notNull(),
     /** bcrypt, cost 10+ (§11). */
     passwordHash: text('password_hash').notNull(),
+    /**
+     * Contact email of an owner who registered their gym themselves. Never used
+     * for login (§2: no email login). Unique across all gyms, ignoring case.
+     */
+    email: text('email'),
     active: boolean('active').notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -164,6 +179,7 @@ export const users = pgTable(
     unique('users_gym_phone_unique').on(t.gymId, t.phone),
     unique('users_gym_id_unique').on(t.gymId, t.id),
     index('users_gym_role_idx').on(t.gymId, t.role),
+    uniqueIndex('users_email_ci_unique').on(sql`lower(${t.email})`),
     check('users_phone_format', sql.raw(`phone ~ '^3[0-9]{9}$'`)),
   ],
 );
@@ -201,11 +217,12 @@ export const members = pgTable(
     trainerId: uuid('trainer_id'),
     joinedOn: day('joined_on').notNull(),
     /**
-     * Required. Registration needs a membership payment (final clarification 2),
-     * and the due date comes from that payment by the §7 rule. A deferred trigger
-     * in 0001_integrity_rules.sql rejects a new member saved without a payment.
+     * Set by membership payments (§7 Recording a payment). Null for a member
+     * registered without a first payment (§6 Add member: "Optional first payment"):
+     * the PDF gives no due date until one is recorded. 0003 removed the 0001
+     * trigger that required a payment at registration.
      */
-    dueOn: day('due_on').notNull(),
+    dueOn: day('due_on'),
     frozenUntil: day('frozen_until'),
     goal: goalEnum('goal'),
     gender: genderEnum('gender'),

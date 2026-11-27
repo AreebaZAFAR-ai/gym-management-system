@@ -9,6 +9,7 @@ import {
   type MemberDetail,
   type MemberListItem,
   type RegisterMemberResponse,
+  type ResetPasswordResponse,
 } from '@gym/shared';
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -20,7 +21,7 @@ import { DB, type Database } from '../db/db.module';
 import { checkins, dueDateChanges, gyms, members, payments, plans, users, whatsappMessages } from '../db/schema';
 import { toLogItem } from '../door/door.service';
 import { amountPkr, paymentMethod, toPayment } from '../payments/payments.service';
-import { queueWhatsapp, receiptText, toWhatsAppMessage, type Executor } from '../whatsapp/whatsapp';
+import { queueWhatsapp, receiptText, toWhatsAppMessage, welcomeText, type Executor } from '../whatsapp/whatsapp';
 import { selectMembers, toListItem, type MemberRow } from './member-view';
 
 export const DUPLICATE_PHONE = 'This mobile number is already registered.';
@@ -47,11 +48,10 @@ const registerBody = z.object({
   notes: optionalText,
   planId: z.string({ error: 'Choose a fee plan.' }).uuid('Choose a fee plan.'),
   trainerId: z.string().uuid('Trainer not found.').nullish(),
-  // Registration requires the first membership payment (clarification).
-  payment: z.object(
-    { amountPkr, method: paymentMethod, txnId: optionalText },
-    { error: 'Registration needs the first membership payment.' },
-  ),
+  // §6 Add member: "Optional first payment with method."
+  payment: z
+    .object({ amountPkr, method: paymentMethod, txnId: optionalText }, { error: 'Enter the payment amount and method.' })
+    .nullish(),
 });
 
 const updateBody = z.object({
@@ -145,10 +145,10 @@ export class MembersService {
    * - Member ID = gym prefix + running number, never reused.
    * - One account per mobile number per gym.
    * - Default password = last 6 digits of the mobile number, returned once.
-   * - The first payment starts on the payment date (today) and runs the plan's months.
-   * - Saving the payment queues the WhatsApp receipt (§7).
-   * Unresolved: §6/§7 also require a welcome WhatsApp, but the PDF gives no wording,
-   * so it is not queued yet.
+   * - Queues the welcome WhatsApp (§6/§7, owner-approved wording).
+   * - Optional first payment (§6): when given, it starts on the payment date (today),
+   *   runs the plan's months, sets the due date and queues the WhatsApp receipt (§7).
+   *   Without it no payment or receipt is created and the member has no due date yet.
    */
   async register(staff: Principal, body: unknown): Promise<RegisterMemberResponse> {
     const input = parse(registerBody, body);
@@ -174,30 +174,50 @@ export class MembersService {
           .returning({ id: users.id });
         const memberId = user!.id;
 
-        const { periodFrom, periodTo } = firstPaymentPeriod(plan.months, today);
+        const pay = input.payment ?? null;
+        const period = pay ? firstPaymentPeriod(plan.months, today) : null;
         await tx.insert(members).values({
           userId: memberId, gymId: staff.gymId, code, planId: plan.id, trainerId: input.trainerId ?? null,
-          joinedOn: input.joinedOn, dueOn: periodTo, goal: input.goal ?? null, gender: input.gender ?? null,
+          joinedOn: input.joinedOn, dueOn: period?.periodTo ?? null, goal: input.goal ?? null, gender: input.gender ?? null,
           emergencyContact: input.emergencyContact, fingerprintId: input.fingerprintId, notes: input.notes,
         });
+
+        await queueWhatsapp(tx, {
+          gymId: staff.gymId, memberId, toPhone: input.phone, kind: 'welcome', body: welcomeText(gym!.name),
+        });
+
+        if (!pay || !period) return { memberId, code, temporaryPassword, dueOn: null, payment: null };
+
         const [payment] = await tx
           .insert(payments)
           .values({
-            gymId: staff.gymId, memberId, amountPkr: input.payment.amountPkr, method: input.payment.method,
-            txnId: input.payment.txnId, periodFrom, periodTo, recordedBy: staff.id,
+            gymId: staff.gymId, memberId, amountPkr: pay.amountPkr, method: pay.method,
+            txnId: pay.txnId, periodFrom: period.periodFrom, periodTo: period.periodTo, recordedBy: staff.id,
           })
           .returning();
-
         await queueWhatsapp(tx, {
           gymId: staff.gymId, memberId, toPhone: input.phone, kind: 'receipt',
-          body: receiptText(input.name, input.payment.amountPkr, input.payment.method, gym!.name, periodTo),
+          body: receiptText(input.name, pay.amountPkr, pay.method, gym!.name, period.periodTo),
         });
 
-        return { memberId, code, temporaryPassword, dueOn: periodTo, payment: toPayment(payment!) };
+        return { memberId, code, temporaryPassword, dueOn: period.periodTo, payment: toPayment(payment!) };
       });
     } catch (err) {
       throw mapConflict(err);
     }
+  }
+
+  /**
+   * POST members/:code/reset-password (§2, §6 "Reset password (shows the new one)").
+   * Owner-approved rule: the password goes back to the §7 default (last 6 digits of
+   * the mobile number). Stored as a bcrypt hash; returned once for reception to read out.
+   */
+  async resetPassword(staff: Principal, code: string): Promise<ResetPasswordResponse> {
+    const m = await this.find(this.db, staff.gymId, code);
+    const password = defaultPassword(m.phone);
+    await this.db.update(users).set({ passwordHash: await hashPassword(password), updatedAt: new Date() })
+      .where(and(eq(users.gymId, staff.gymId), eq(users.id, m.memberId)));
+    return { password };
   }
 
   // ---------- Helpers ----------

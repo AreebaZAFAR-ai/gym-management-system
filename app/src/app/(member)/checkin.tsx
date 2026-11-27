@@ -64,6 +64,8 @@ export default function Checkin() {
       return <StatusPill status="frozen" label={t.checkin.frozen(formatShortDate(membership.frozenUntil!))} />;
     }
     if (!d.allowed) return <StatusPill status="overdue" label={t.checkin.overdue} />;
+    // No payment recorded yet (§6 optional first payment): no due date to show.
+    if (membership.dueOn === null) return <StatusPill status={membership.status} />;
     return (
       <StatusPill
         status={membership.dueOn < today ? 'due_soon' : 'active'}

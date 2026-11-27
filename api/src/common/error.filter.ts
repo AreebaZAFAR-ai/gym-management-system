@@ -1,5 +1,6 @@
 import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import type { Response } from 'express';
+import { pgErrorOf } from './db-errors';
 
 export const GENERIC_ERROR = 'Something went wrong. Please try again.';
 
@@ -21,6 +22,8 @@ export class ErrorFilter implements ExceptionFilter {
     }
 
     this.logger.error(exception instanceof Error ? (exception.stack ?? exception.message) : String(exception));
+    const pg = pgErrorOf(exception);
+    if (pg) this.logger.error(`PostgreSQL error ${JSON.stringify(pg)}`);
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: GENERIC_ERROR });
   }
 }

@@ -139,7 +139,7 @@ describe('staff routes: door, approvals, members, dashboard, messages, setup', (
         .toEqual({ message: 'A freeze must be 3 to 15 days.' });
       const [m] = await ctx.db.select().from(members).where(eq(members.code, 'IH-0010'));
       const pending = (await as(t.reception).get('/v1/freeze-requests')).body.find((f: { id: string }) => f.id === req.body.id);
-      expect(pending).toMatchObject({ days: 7, reason: 'travel', dueOn: m!.dueOn, newDueOn: addDays(m!.dueOn, 7) });
+      expect(pending).toMatchObject({ days: 7, reason: 'travel', dueOn: m!.dueOn, newDueOn: addDays(m!.dueOn!, 7) });
 
       const ok = await as(t.reception).post(`/v1/freeze-requests/${req.body.id}/approve`);
       expect(ok.body).toMatchObject({ status: 'approved' });
@@ -191,6 +191,18 @@ describe('staff routes: door, approvals, members, dashboard, messages, setup', (
       expect((await as(t.owner).patch('/v1/members/IH-0002', { active: true })).body.active).toBe(true);
     });
 
+    it('reset password: back to the §7 default (last 6 digits), returned once, stored hashed', async () => {
+      const res = await as(t.reception).post('/v1/members/IH-0001/reset-password');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ password: '000001' });
+      const [m] = await ctx.db.select().from(members).where(eq(members.code, 'IH-0001'));
+      const [u] = await ctx.db.select().from(users).where(eq(users.id, m!.userId));
+      expect(u!.passwordHash).toMatch(/^\$2[aby]\$10\$/);
+      expect((await http().post('/v1/auth/login').send({ gymId: 'gym-a', phone: '03001000001', password: '000001' })).status).toBe(200);
+      expect((await as(t.receptionB).post('/v1/members/IH-0001/reset-password')).status).toBe(404);
+      expect((await as(t.trainer).post('/v1/members/IH-0001/reset-password')).status).toBe(403);
+    });
+
     it('refuses a phone or thumbprint ID that belongs to another member', async () => {
       expect((await as(t.reception).patch('/v1/members/IH-0001', { phone: '0300 1000002' })).status).toBe(409);
       expect((await as(t.reception).patch('/v1/members/IH-0002', { fingerprintId: '33' })).status).toBe(200);
@@ -238,6 +250,38 @@ describe('staff routes: door, approvals, members, dashboard, messages, setup', (
       expect((await as(t.receptionB).patch(`/v1/whatsapp/${msg.id}`, { status: 'sent' })).status).toBe(404);
     });
 
+    it('§7 fee reminders: overdue and due within 3 days, at most once in 7 days per member; never frozen or unpaid members', async () => {
+      const { memberId: dueIn2 } = await member('IH-0030', '3001000030', addDays(today, 2));
+      const { memberId: dueIn4 } = await member('IH-0031', '3001000031', addDays(today, 4));
+      const { memberId: frozenDue } = await member('IH-0032', '3001000032', addDays(today, 1), { frozenUntil: addDays(today, 3) });
+      const { memberId: frozenOverdue } = await member('IH-0033', '3001000033', addDays(today, -9), { frozenUntil: today });
+      // Fixture members above were inserted with fixed codes; move the running number past them.
+      await ctx.db.update(gyms).set({ lastMemberNumber: 900 }).where(eq(gyms.id, 'gym-a'));
+      const unpaid = await as(t.reception).post('/v1/members', { name: 'No Pay', phone: '0300 1000034', joinedOn: today, planId: a.planId });
+      expect(unpaid.status).toBe(201);
+      const [overdue] = await ctx.db.select().from(members).where(eq(members.code, 'IH-0002'));
+
+      const first = await as(t.reception).post('/v1/whatsapp/reminders');
+      expect(first.status).toBe(200);
+      const reminders = (await as(t.reception).get('/v1/whatsapp?status=to_send')).body.filter((m: { kind: string }) => m.kind === 'reminder');
+      const ids = reminders.map((m: { memberId: string }) => m.memberId);
+      expect(ids).toContain(overdue!.userId);
+      expect(ids).toContain(dueIn2);
+      expect(ids).not.toContain(dueIn4);
+      expect(ids).not.toContain(frozenDue);
+      expect(ids).not.toContain(frozenOverdue);
+      expect(ids).not.toContain(unpaid.body.memberId);
+      expect(first.body).toEqual({ queued: reminders.length });
+      expect(reminders.find((m: { memberId: string }) => m.memberId === dueIn2).body).toBe(
+        `Assalam o Alaikum IH-0030, your Iron House Fitness fee of PKR 4,000 is due on ${formatShortDate(addDays(today, 2))}. Please pay to keep your membership active. Thank you!`,
+      );
+      expect(reminders.find((m: { memberId: string }) => m.memberId === overdue!.userId).body).toContain(`was due on ${formatShortDate(overdue!.dueOn!)}`);
+
+      expect((await as(t.reception).post('/v1/whatsapp/reminders')).body).toEqual({ queued: 0 });
+      expect((await as(t.receptionB).get('/v1/whatsapp')).body.some((m: { kind: string }) => m.kind === 'reminder')).toBe(false);
+      expect((await as(t.trainer).post('/v1/whatsapp/reminders')).status).toBe(403);
+    });
+
     it('announcements: post with an optional WhatsApp copy to active members, shown to members, delete', async () => {
       const res = await as(t.reception).post('/v1/announcements', { title: 'Closed Friday 12–2', body: 'Jummah prayers.', sendWhatsApp: true });
       expect(res.status).toBe(201);
@@ -270,7 +314,16 @@ describe('staff routes: door, approvals, members, dashboard, messages, setup', (
       expect(self.status).toBe(403);
       expect(self.body).toEqual({ message: CANNOT_DISABLE_SELF });
       expect((await as(t.owner).get('/v1/staff')).body.every((s: { role: string }) => s.role !== 'member' as string)).toBe(true);
-      expect((await as(t.reception).get('/v1/staff')).status).toBe(403);
+    });
+
+    it('§10: reception can list staff (GET staff) but only the owner can add or change staff', async () => {
+      const list = await as(t.reception).get('/v1/staff');
+      expect(list.status).toBe(200);
+      expect(list.body.map((s: { id: string }) => s.id)).toContain(a.trainer.id);
+      expect((await as(t.receptionB).get('/v1/staff')).body.map((s: { id: string }) => s.id)).not.toContain(a.trainer.id);
+      expect((await as(t.reception).post('/v1/staff', { name: 'X', phone: '0333 7654321', role: 'reception', password: 'x' })).status).toBe(403);
+      expect((await as(t.reception).patch(`/v1/staff/${a.trainer.id}`, { active: false })).status).toBe(403);
+      expect((await as(t.trainer).get('/v1/staff')).status).toBe(403);
     });
 
     it('settings: owner reads and edits; the check-in secret is never returned', async () => {
