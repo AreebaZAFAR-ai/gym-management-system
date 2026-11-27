@@ -21,6 +21,7 @@ import { selectMembers, toScanMember, type MemberRow } from '../members/member-v
 
 export const DEVICE_NOT_RECOGNISED = 'Device not recognised.';
 export const ENTRY_ALLOWED = 'Entry allowed';
+export const ACCOUNT_DISABLED_AT_DOOR = 'Account disabled. Please see reception.';
 export const unknownMemberCode = (code: string) => `No member with ID ${code} at this gym.`;
 
 type DoorGym = { id: string; graceDays: number };
@@ -110,6 +111,12 @@ export class DoorService {
     }
     const today = pkToday();
     const member = toScanMember(m, today);
+    // §6 Disable/Enable: a disabled account is blocked before the frozen and overdue
+    // checks, and the scan is still saved like any other (§7 Entry).
+    if (!m.active) {
+      await this.save(gym.id, m.memberId, false, ACCOUNT_DISABLED_AT_DOOR, source, scannedBy);
+      return { ok: true, allowed: false, member, message: ACCOUNT_DISABLED_AT_DOOR, amountDue: null };
+    }
     const decision = entryDecision(m, today, gym.graceDays);
     if (decision.allowed) {
       await this.save(gym.id, m.memberId, true, null, source, scannedBy);

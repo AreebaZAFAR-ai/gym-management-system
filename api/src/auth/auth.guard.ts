@@ -12,6 +12,7 @@ import type { Role } from '@gym/shared';
 import { and, eq } from 'drizzle-orm';
 import type { Request } from 'express';
 import { DB, type Database } from '../db/db.module';
+import { ACCOUNT_DISABLED } from './auth.service';
 import { users } from '../db/schema';
 import { IS_PUBLIC, type Principal, ROLES } from './auth.decorators';
 
@@ -58,10 +59,13 @@ export class AuthGuard implements CanActivate {
     if (typeof payload.sub !== 'string' || typeof payload.gym !== 'string') throw new UnauthorizedException(LOGIN_AGAIN);
 
     const [user] = await this.db
-      .select({ id: users.id, gymId: users.gymId, role: users.role, name: users.name, phone: users.phone })
+      .select({ id: users.id, gymId: users.gymId, role: users.role, name: users.name, phone: users.phone, active: users.active })
       .from(users)
       .where(and(eq(users.id, payload.sub), eq(users.gymId, payload.gym)));
     if (!user) throw new UnauthorizedException(LOGIN_AGAIN);
+    // §6 Disable/Enable: checked on every call (same primary-key lookup), so a disabled
+    // account's existing token stops working at once. 401 makes the apps sign out.
+    if (!user.active) throw new UnauthorizedException(ACCOUNT_DISABLED);
 
     const allowed = this.reflector.getAllAndOverride<Role[] | undefined>(ROLES, targets);
     if (allowed && !roleAllowed(user.role, allowed)) throw new ForbiddenException(NO_ACCESS);
