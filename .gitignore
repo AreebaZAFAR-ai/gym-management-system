@@ -20,3 +20,8 @@ api/backups/
 
 # Company requirements document (kept local)
 *.pdf
+
+# Local reports and source images that must not be committed.
+/reports/
+/fit1.png
+/fitness.jpg
