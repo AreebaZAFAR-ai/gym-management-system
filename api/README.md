@@ -102,6 +102,7 @@ still needs steps 2–4 of §12 (brand file, icon, app build) for its member app
 | `DATABASE_URL_DIRECT` | Neon **direct** connection (no `-pooler`). Used by migrations and the scripts. |
 | `JWT_SECRET` | Signs login tokens and screenshot links. 32+ random characters. |
 | `CORS_ORIGINS` | Comma-separated web admin origins. Required in production. |
+| `TRUST_PROXY` | Proxy hops to trust for `X-Forwarded-Proto`/`X-Forwarded-For` (default `1`, the host's HTTPS proxy on Railway, Render or Vercel); also `true`/`false` or a comma-separated list of proxy IPs. Use `false` only if the API is reached directly with no proxy. |
 | `UPLOAD_DIR` | Optional. Where payment screenshots are saved in development (default `./uploads`, git-ignored). |
 | `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | §8 S3-compatible storage (AWS S3, Cloudflare R2). **Required in production**; when set, screenshots go to the bucket instead of `UPLOAD_DIR`. Keep the bucket private. |
 | `S3_REGION`, `S3_ENDPOINT` | Region (default `auto`, for R2) and, for non-AWS providers, the endpoint URL. |
@@ -111,8 +112,8 @@ Screenshots are never public: the API serves them only through 15-minute signed 
 
 **HTTPS only in production (§11).** With `NODE_ENV=production` the API refuses plain-HTTP
 requests (403 "HTTPS is required.") and sends HSTS. Deploy it behind the host's TLS proxy
-(Railway, Render, nginx), which must set `X-Forwarded-Proto`. `/health` stays reachable for
-the host's health checks.
+(Railway, Render, Vercel, nginx), which must set `X-Forwarded-Proto`; the API trusts that
+header from `TRUST_PROXY` hops (default one). `/health` stays reachable for the host's health checks.
 
 ## Database and migrations
 

@@ -19,6 +19,12 @@ const envSchema = z
     JWT_SECRET: z.string().min(32, 'must be at least 32 characters'),
     /** Comma-separated origins allowed to call the API from a browser (the web admin). */
     CORS_ORIGINS: z.string().trim().optional(),
+    /**
+     * Express "trust proxy": how many proxy hops to trust (default 1, the host's TLS proxy),
+     * true/false, or a comma-separated list of proxy IPs/subnets. Decides whether
+     * X-Forwarded-Proto (HTTPS check) and X-Forwarded-For (client IP) are believed.
+     */
+    TRUST_PROXY: z.string().trim().min(1).default('1'),
     /** Folder for uploaded payment screenshots (local disk; §8 development storage). Default ./uploads. */
     UPLOAD_DIR: z.string().trim().min(1).optional(),
     /**
@@ -69,6 +75,15 @@ export function parseEnv(source: NodeJS.ProcessEnv): Env {
 export function loadDotEnv(dir: string = process.cwd()): void {
   const file = resolve(dir, '.env');
   if (existsSync(file)) process.loadEnvFile(file);
+}
+
+/** TRUST_PROXY as Express expects it: a hop count, true/false, or a list of addresses. */
+export function trustProxySetting(value: string): number | boolean | string {
+  const v = value.trim();
+  if (/^\d+$/.test(v)) return Number(v);
+  if (/^true$/i.test(v)) return true;
+  if (/^false$/i.test(v)) return false;
+  return v;
 }
 
 export function corsOrigins(env: Env): string[] {
