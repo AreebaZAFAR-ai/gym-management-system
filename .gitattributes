@@ -1,0 +1,4 @@
+# Migration SQL is hashed when applied (drizzle.__drizzle_migrations): keep LF on every checkout
+# so a Windows checkout (core.autocrlf) does not change the files.
+api/drizzle/*.sql text eol=lf
+api/drizzle/meta/*.json text eol=lf

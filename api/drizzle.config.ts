@@ -3,17 +3,18 @@ import { defineConfig } from 'drizzle-kit';
 
 if (existsSync('.env')) process.loadEnvFile('.env');
 
-const url = process.env.DATABASE_URL_DIRECT;
+// Migrations use the direct connection; DATABASE_URL only if there is no direct one.
+// `drizzle-kit generate` reads the schema files and never connects.
+const url = process.env.DATABASE_URL_DIRECT ?? process.env.DATABASE_URL;
 if (!url) {
-  throw new Error(
-    'DATABASE_URL_DIRECT is missing from api/.env. Migrations use the Neon direct connection, not the pooled one.',
-  );
+  throw new Error('DATABASE_URL_DIRECT (or DATABASE_URL) is missing from api/.env.');
 }
 
 /**
- * Migrations only (`npm run db:generate`, `npm run db:migrate`).
- * Generated SQL in ./drizzle is reviewed and committed before it is applied.
- * Do not use `drizzle-kit push`: it can drop columns without a reviewable file.
+ * Used only by `npm run db:generate` (drizzle-kit generate), which writes a new SQL file
+ * in ./drizzle to review and commit. Migrations are applied by `npm run db:migrate`
+ * (src/cli/db.ts), never by drizzle-kit. Never use `drizzle-kit push`: it can drop
+ * tables and columns without a reviewable file.
  */
 export default defineConfig({
   dialect: 'postgresql',

@@ -15,6 +15,8 @@ coverage/
 
 # Uploaded payment screenshots (members' private images; local-disk storage)
 uploads/
+# Database backups made by db:backup / db:migrate (contain member data).
+api/backups/
 
 # Company requirements document (kept local)
 *.pdf

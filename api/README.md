@@ -116,22 +116,72 @@ the host's health checks.
 
 ## Database and migrations
 
-- Schema: `src/db/schema.ts`. Migrations: `drizzle/` (SQL, committed).
+- Schema: `src/db/schema.ts`. Migrations: `drizzle/` (SQL, committed, one file per change).
   `0001_integrity_rules.sql` holds the rules Drizzle cannot express (append-only
   payments; exercise names are unique per gym; gym isolation for workouts);
   `0002_builtin_exercises.sql` installs the 17 built-in exercises.
-- `0003_optional_registration_payment.sql` (§6 "Optional first payment"): removes the 0001
-  trigger `members_require_payment` and its function `check_member_has_payment()`, and lets
-  `members.due_on` be empty. It changes no data. **Not yet applied to Neon**: review it, then
-  run `db:migrate` and `db:verify` (which now expects 4 migrations, 5 triggers, 4 functions).
-  It contains `DROP TRIGGER`/`DROP FUNCTION` (rules only, no data), an exception to the rule
-  below that needs the owner's review before it is applied.
-- `npm --workspace api run db:generate` writes a new SQL migration. **Read it
-  before applying**; it must never contain `DROP` or data-destroying changes.
-- `npm --workspace api run db:migrate` applies pending migrations (direct connection).
-- `npm --workspace api run db:verify` checks tables, indexes, triggers and every
-  integrity rule inside a transaction that is rolled back (leaves no data).
-- Never use `drizzle-kit push`.
+- Migrations use `DATABASE_URL_DIRECT` (Neon direct connection), or `DATABASE_URL` if
+  there is no direct one. Variables already set in the environment win over `api/.env`.
+- Applied migrations are recorded in Drizzle's own table, `drizzle.__drizzle_migrations`
+  (SHA-256 of the SQL file and the journal timestamp).
+- **Never use `drizzle-kit push`**: it can drop tables and columns without a reviewable file.
+
+### Commands (from `api/`, or the repo root with the same names)
+
+| Command | What it does |
+| --- | --- |
+| `npm run db:generate` | Writes a new SQL migration in `drizzle/` from your schema changes (`drizzle-kit generate`; does not connect). |
+| `npm run db:status` | Read-only: database host and name (never the password), applied and pending migrations, problems. |
+| `npm run db:backup` | Exports every table to `api/backups/<database>-<time>.json` (git-ignored; contains member data). |
+| `npm run db:migrate` | Backs up, then applies pending migrations safely, then shows the status. |
+| `npm run db:verify` | Checks tables, indexes, triggers and integrity rules in a transaction that is rolled back. |
+
+### Workflow for a schema change
+
+1. Edit `src/db/schema.ts` in VS Code.
+2. `npm run db:generate`, and **read the new SQL file** in `drizzle/`.
+3. Commit the schema change, the SQL file and `drizzle/meta/` together.
+4. `npm run db:status` to see what is pending, then `npm run db:migrate`, or deploy (below).
+
+Never edit a migration that has been applied anywhere: write a new one. `db:migrate`
+refuses to run if an applied file's hash has changed. Migration SQL is kept with LF line
+endings (`.gitattributes`); line endings alone never count as an edit.
+
+### What `db:migrate` does, in order
+
+1. Takes a Postgres advisory lock, so two runs (two deploys) never migrate at the same time.
+   A second run waits up to 60 seconds, then stops with a plain message.
+2. Stops if an applied migration was edited, if a pending one is older than an applied one,
+   or if the database has migrations this code does not know (newer code deployed?).
+3. Scans each pending migration and **stops**, naming the file and line, if it contains
+   `DROP TABLE`, `DROP SCHEMA`, `DROP COLUMN`, `TRUNCATE`, `DELETE` without `WHERE` or
+   `ALTER COLUMN … TYPE`. To apply such a migration on purpose:
+   `npm run db:migrate -- --allow-destructive`. It then asks you to type the database name;
+   where nothing can be typed (a deploy), add `--confirm-database=<name>`.
+4. Backs up every table (`db:backup`). If the backup fails, nothing is applied.
+5. Applies each pending migration **in its own transaction**. If one fails it is rolled back
+   (the database is as it was before it), the run stops, and the summary names it and why.
+6. Prints a summary (applied, skipped, backup file) and the status.
+
+Nothing is applied when the API starts: migrations run only through `db:migrate`.
+
+### Deploying (Railway, Render)
+
+Run `db:migrate` as the host's release step, so pending migrations are applied **before**
+the new API version starts, and a failed migration stops the deploy.
+
+- **Railway**: Service → Settings → Deploy → *Pre-deploy command*:
+  `npm --workspace api run db:migrate`
+- **Render**: Service → Settings → *Pre-Deploy Command* (paid instance types):
+  `npm --workspace api run db:migrate`
+- Set `DATABASE_URL_DIRECT` (and `DATABASE_URL`) in the host's environment variables.
+  The pre-deploy step does not need `api/.env`.
+- Backups made during a deploy are written to the deploy container's disk, which is not
+  kept. Before a deploy with a risky migration, also run `npm run db:backup` from your own
+  machine (or rely on your database provider's point-in-time restore).
+- Destructive migrations stop the deploy unless the command includes
+  `--allow-destructive --confirm-database=<name>`; add that only for the one deploy that
+  needs it, after reviewing the SQL.
 
 ## Tests
 
