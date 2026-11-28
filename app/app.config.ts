@@ -46,6 +46,19 @@ const brandAsset = (file: string, fallback: string) =>
 const icon = brandAsset('icon.png', './assets/images/icon.png');
 const splash = brandAsset('splash.png', './assets/images/splash-icon.png');
 
+// Android adaptive icon. A brand with its own foreground (logo inside the 66 dp safe zone,
+// transparent around it) shows it on the brand background colour, with no template
+// background image or monochrome layer. Brands without one keep the default images.
+const brandForeground = fs.existsSync(path.join(__dirname, 'brands', gym, 'android-icon-foreground.png'));
+const adaptiveIcon = brandForeground
+  ? { backgroundColor: '#F2F3F1', foregroundImage: `./brands/${gym}/android-icon-foreground.png` }
+  : {
+      backgroundColor: '#F2F3F1',
+      foregroundImage: './assets/images/android-icon-foreground.png',
+      backgroundImage: './assets/images/android-icon-background.png',
+      monochromeImage: './assets/images/android-icon-monochrome.png',
+    };
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: brand.name,
@@ -63,12 +76,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     package: brand.bundleId,
-    adaptiveIcon: {
-      backgroundColor: '#F2F3F1',
-      foregroundImage: './assets/images/android-icon-foreground.png',
-      backgroundImage: './assets/images/android-icon-background.png',
-      monochromeImage: './assets/images/android-icon-monochrome.png',
-    },
+    adaptiveIcon,
     predictiveBackGestureEnabled: false,
   },
   web: {

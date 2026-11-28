@@ -5,6 +5,8 @@
  * Never used when API_URL points at a real server.
  */
 import {
+  ALREADY_FROZEN,
+  FREEZE_ALREADY_PENDING,
   addDays,
   bestEstimatedMax,
   defaultPassword,
@@ -519,8 +521,10 @@ export function createMockApi(onUnauthorized: () => void): GymApi {
       await wait();
       const u = auth('member');
       if (!isValidFreezeDays(days)) throw new ApiError('A freeze must be 3 to 15 days.', 400);
+      const fm = members.find((m) => m.userId === u.id);
+      if (fm?.frozenUntil && pkToday() <= fm.frozenUntil) throw new ApiError(ALREADY_FROZEN, 400);
       if (freezes.some((f) => f.memberId === u.id && f.status === 'pending')) {
-        throw new ApiError('You already have a freeze request waiting.', 409);
+        throw new ApiError(FREEZE_ALREADY_PENDING, 400);
       }
       const f = { id: uid(), memberId: u.id, days, reason, status: 'pending' as const, createdAt: nowIso() };
       freezes.push(f);

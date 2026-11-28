@@ -1,0 +1,10 @@
+{
+  "id": "fitness",
+  "name": "Fitness",
+  "short": "FI",
+  "city": "Faisalabad",
+  "primaryColor": "#17191C",
+  "bundleId": "pk.fitness.members",
+  "payTo": { "label": "JazzCash", "number": "03216293748", "title": "Fitness" },
+  "receptionWhatsapp": "3216293748"
+}

@@ -2,6 +2,9 @@ node_modules/
 .expo/
 dist/
 web-build/
+.next/
+next-env.d.ts
+*.tsbuildinfo
 *.log
 .env
 .env.*
@@ -12,6 +15,13 @@ coverage/
 
 # Uploaded payment screenshots (members' private images; local-disk storage)
 uploads/
+# Database backups made by db:backup / db:migrate (contain member data).
+api/backups/
 
 # Company requirements document (kept local)
 *.pdf
+
+# Local reports and source images that must not be committed.
+/reports/
+/fit1.png
+/fitness.jpg

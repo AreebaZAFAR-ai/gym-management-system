@@ -2,9 +2,9 @@ import { addDays, addMonths, formatShortDate, pkToday } from '@gym/shared';
 import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { members, payments, users, whatsappMessages } from '../src/db/schema';
-import { DUPLICATE_FINGERPRINT, DUPLICATE_PHONE } from '../src/members/members.service';
-import { MEMBER_NOT_FOUND } from '../src/payments/payments.service';
+import { gyms, members, payments, plans, users, whatsappMessages } from '../src/db/schema';
+import { CHOOSE_GYM_TRAINER, DUPLICATE_FINGERPRINT, DUPLICATE_PHONE, HIDDEN_PLAN } from '../src/members/members.service';
+import { MEMBER_NOT_FOUND, RANGE_BACKWARDS, RANGE_TOO_LONG } from '../src/payments/payments.service';
 import { closeTestApp, createTestApp, type TestContext } from './helpers/app';
 import { registerMember } from './helpers/seed';
 import { login, seedGym, type GymFixture } from './helpers/staff';
@@ -21,6 +21,7 @@ describe('member registration and membership payments', () => {
   const as = (token: string) => ({
     post: (path: string, body: object) => http().post(path).set('Authorization', `Bearer ${token}`).send(body),
     get: (path: string) => http().get(path).set('Authorization', `Bearer ${token}`),
+    patch: (path: string, body: object) => http().patch(path).set('Authorization', `Bearer ${token}`).send(body),
   });
 
   const newMember = (over: Record<string, unknown> = {}) => ({
@@ -62,10 +63,22 @@ describe('member registration and membership payments', () => {
       expect(m).toMatchObject({ code: 'IH-0001', dueOn: due, joinedOn: today, planId: a.planId, trainerId: a.trainer.id, goal: 'strength', gender: 'male' });
     });
 
-    it('§7: saving the registration payment queues the WhatsApp receipt (welcome message pending: no wording in the PDF)', async () => {
+    it('§7: registration queues the welcome WhatsApp with the member ID, temporary password and a request to change it', async () => {
       const msgs = await ctx.db.select().from(whatsappMessages).where(eq(whatsappMessages.memberId, reg.body.memberId));
-      expect(msgs.map((x) => x.kind)).toEqual(['receipt']);
-      const receipt = msgs[0];
+      const welcome = msgs.filter((x) => x.kind === 'welcome');
+      expect(welcome).toHaveLength(1);
+      expect(welcome[0]).toMatchObject({
+        status: 'queued', toPhone: '3001234567',
+        body:
+          'Assalam o Alaikum Ali, welcome to Iron House Fitness! Your member ID is IH-0001. Log in to the IH app with ' +
+          'your mobile number and temporary password 234567. Please change your password from Profile after logging in.',
+      });
+    });
+
+    it('§7: saving the registration payment queues the WhatsApp receipt', async () => {
+      const msgs = await ctx.db.select().from(whatsappMessages).where(eq(whatsappMessages.memberId, reg.body.memberId));
+      expect(msgs.map((x) => x.kind).sort()).toEqual(['receipt', 'welcome']);
+      const receipt = msgs.find((x) => x.kind === 'receipt');
       expect(receipt).toMatchObject({ status: 'queued', toPhone: '3001234567' });
       expect(receipt!.body).toBe(
         `Assalam o Alaikum Ali, we received PKR 4,000 by JazzCash at Iron House Fitness. Your membership is paid till ${formatShortDate(addMonths(today, 1))}. Thank you!`,
@@ -107,11 +120,54 @@ describe('member registration and membership payments', () => {
       expect(dup.body).toEqual({ message: DUPLICATE_FINGERPRINT });
     });
 
-    it('registration requires the first payment', async () => {
-      const res = await as(receptionA).post('/v1/members', newMember({ phone: '03003330000', payment: undefined }));
+    describe('§6 "Optional first payment": registering without a payment', () => {
+      let unpaid: request.Response;
+
+      beforeAll(async () => {
+        unpaid = await as(receptionA).post('/v1/members', newMember({ phone: '03003330000', payment: undefined }));
+      });
+
+      it('registers the member with no payment and no receipt; the fee is due from the joining date', async () => {
+        expect(unpaid.status).toBe(201);
+        expect(unpaid.body).toMatchObject({ temporaryPassword: '330000', dueOn: today, payment: null });
+        expect(await ctx.db.select().from(payments).where(eq(payments.memberId, unpaid.body.memberId))).toEqual([]);
+        const [m] = await ctx.db.select().from(members).where(eq(members.userId, unpaid.body.memberId));
+        expect(m?.dueOn).toBe(today);
+        expect((await as(receptionA).post('/v1/members', newMember({ phone: '03003330001', payment: null }))).status).toBe(201);
+      });
+
+      it('queues only the welcome WhatsApp', async () => {
+        const msgs = await ctx.db.select().from(whatsappMessages).where(eq(whatsappMessages.memberId, unpaid.body.memberId));
+        expect(msgs.map((x) => [x.kind, x.body])).toEqual([
+          [
+            'welcome',
+            `Assalam o Alaikum Ali, welcome to Iron House Fitness! Your member ID is ${unpaid.body.code}. Log in to the IH app with ` +
+              'your mobile number and temporary password 330000. Please change your password from Profile after logging in.',
+          ],
+        ]);
+      });
+
+      it('the member list and member page show the joining date as the due date', async () => {
+        const detail = await as(receptionA).get(`/v1/members/${unpaid.body.code}`);
+        expect(detail.body).toMatchObject({ dueOn: today, payments: [] });
+        const listed = (await as(receptionA).get('/v1/members?q=3330000')).body;
+        expect(listed.map((m: { dueOn: string | null }) => m.dueOn)).toEqual([today]);
+      });
+
+      it('§7 recording the first payment later: due today, so the period starts today; receipt queued', async () => {
+        const res = await as(receptionA).post('/v1/payments', { memberCode: unpaid.body.code, amountPkr: 4000, method: 'cash' });
+        expect(res.status).toBe(201);
+        expect(res.body.payment).toMatchObject({ periodFrom: today, periodTo: addMonths(today, 1) });
+        expect(res.body.newDueOn).toBe(addMonths(today, 1));
+        const kinds = (await ctx.db.select().from(whatsappMessages).where(eq(whatsappMessages.memberId, unpaid.body.memberId))).map((x) => x.kind);
+        expect(kinds.sort()).toEqual(['receipt', 'welcome']);
+      });
+    });
+
+    it('a payment, when given, must have a valid amount and method', async () => {
+      const res = await as(receptionA).post('/v1/members', newMember({ phone: '03003330009', payment: { amountPkr: 4000 } }));
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ message: 'Registration needs the first membership payment.' });
-      expect(await ctx.db.select().from(users).where(eq(users.phone, '3003330000'))).toHaveLength(0);
+      expect(await ctx.db.select().from(users).where(eq(users.phone, '3003330009'))).toHaveLength(0);
     });
 
     it('validates the form', async () => {
@@ -133,7 +189,82 @@ describe('member registration and membership payments', () => {
       const plan = await as(receptionA).post('/v1/members', newMember({ phone: '03005550000', planId: b.planId }));
       expect(plan.body).toEqual({ message: 'Fee plan not found.' });
       const trainer = await as(receptionA).post('/v1/members', newMember({ phone: '03005550000', trainerId: b.trainer.id }));
-      expect(trainer.body).toEqual({ message: 'Trainer not found.' });
+      expect(trainer.body).toEqual({ message: CHOOSE_GYM_TRAINER });
+    });
+
+    describe('§6 Add member: the server checks the trainer and the fee plan', () => {
+      let hiddenPlanId: string;
+      beforeAll(async () => {
+        const [p] = await ctx.db.insert(plans).values({ gymId: 'gym-a', name: 'Old quarterly', feePkr: 11000, months: 3, active: false }).returning();
+        hiddenPlanId = p!.id;
+      });
+
+      it('refuses a trainer from Gym B, a member, reception, the owner, a disabled trainer or an unknown ID (POST and PATCH)', async () => {
+        const member = await as(receptionA).post('/v1/members', newMember({ phone: '03006660000' }));
+        expect(member.status).toBe(201);
+        await ctx.db.update(users).set({ active: false }).where(eq(users.id, a.trainer2.id));
+        const bad = [b.trainer.id, member.body.memberId, a.reception.id, a.owner.id, a.trainer2.id, '00000000-0000-4000-8000-000000000000', 'nope'];
+        for (const trainerId of bad) {
+          const res = await as(receptionA).post('/v1/members', newMember({ phone: '03006660001', trainerId }));
+          expect(res.status).toBe(400);
+          expect(res.body).toEqual({ message: CHOOSE_GYM_TRAINER });
+          const patch = await as(receptionA).patch(`/v1/members/${member.body.code}`, { trainerId });
+          expect(patch.status).toBe(400);
+          expect(patch.body).toEqual({ message: CHOOSE_GYM_TRAINER });
+        }
+        await ctx.db.update(users).set({ active: true }).where(eq(users.id, a.trainer2.id));
+        expect(await ctx.db.select().from(users).where(eq(users.phone, '3006660001'))).toHaveLength(0);
+        // An active trainer of this gym is accepted.
+        expect((await as(receptionA).patch(`/v1/members/${member.body.code}`, { trainerId: a.trainer2.id })).status).toBe(200);
+      });
+
+      it('refuses to register a new member on a hidden plan', async () => {
+        const res = await as(receptionA).post('/v1/members', newMember({ phone: '03006660002', planId: hiddenPlanId }));
+        expect(res.status).toBe(400);
+        expect(res.body).toEqual({ message: HIDDEN_PLAN });
+        expect(await ctx.db.select().from(users).where(eq(users.phone, '3006660002'))).toHaveLength(0);
+      });
+
+      it('a member already on a hidden plan keeps it; nobody can be moved to a hidden plan', async () => {
+        const kept = await as(receptionA).post('/v1/members', newMember({ phone: '03006660003' }));
+        const other = await as(receptionA).post('/v1/members', newMember({ phone: '03006660004' }));
+        const [p] = await ctx.db.insert(plans).values({ gymId: 'gym-a', name: 'Ladies', feePkr: 3500, months: 1 }).returning();
+        expect((await as(receptionA).patch(`/v1/members/${kept.body.code}`, { planId: p!.id })).status).toBe(200);
+        await ctx.db.update(plans).set({ active: false }).where(eq(plans.id, p!.id));
+
+        const keep = await as(receptionA).patch(`/v1/members/${kept.body.code}`, { planId: p!.id, notes: 'still here' });
+        expect(keep.status).toBe(200);
+        expect(keep.body).toMatchObject({ planId: p!.id, notes: 'still here' });
+        const edit = await as(receptionA).patch(`/v1/members/${kept.body.code}`, { notes: 'edited' });
+        expect(edit.status).toBe(200);
+        expect(edit.body).toMatchObject({ planId: p!.id });
+
+        const move = await as(ownerA).patch(`/v1/members/${other.body.code}`, { planId: hiddenPlanId });
+        expect(move.status).toBe(400);
+        expect(move.body).toEqual({ message: HIDDEN_PLAN });
+      });
+    });
+
+    describe('§1/§7: a member registered without a payment is not Active forever', () => {
+      it('joined 10 days ago, no payment, grace 3: blocked at the door; after paying, allowed and due = today + plan months', async () => {
+        const [g] = await ctx.db.select({ graceDays: gyms.graceDays }).from(gyms).where(eq(gyms.id, 'gym-a'));
+        expect(g!.graceDays).toBe(3);
+        const joined = addDays(today, -10);
+        const reg = await as(receptionA).post('/v1/members', newMember({ phone: '03007770000', joinedOn: joined, payment: undefined }));
+        expect(reg.status).toBe(201);
+        expect(reg.body.dueOn).toBe(joined);
+        expect((await as(receptionA).get(`/v1/members/${reg.body.code}`)).body.status).toBe('overdue');
+
+        const blocked = await as(receptionA).post('/v1/checkins/scan', { code: reg.body.code });
+        expect(blocked.body).toMatchObject({ ok: true, allowed: false, message: `Fee overdue since ${formatShortDate(joined)}`, amountDue: 4000 });
+
+        const pay = await as(receptionA).post('/v1/payments', { memberCode: reg.body.code, amountPkr: 4000, method: 'cash' });
+        expect(pay.status).toBe(201);
+        expect(pay.body.payment).toMatchObject({ periodFrom: today, periodTo: addMonths(today, 1) });
+        expect(pay.body.newDueOn).toBe(addMonths(today, 1));
+        const allowed = await as(receptionA).post('/v1/checkins/scan', { code: reg.body.code });
+        expect(allowed.body).toMatchObject({ ok: true, allowed: true });
+      });
     });
   });
 
@@ -232,6 +363,57 @@ describe('member registration and membership payments', () => {
       const res = await as(receptionA).get('/v1/payments?from=25-11-2026');
       expect(res.status).toBe(400);
       expect(res.body).toEqual({ message: '"from" must be a date like 2026-11-25.' });
+    });
+
+    describe('§11: default range and the 13-month limit', () => {
+      const monthStart = `${today.slice(0, 8)}01`;
+      const lastMonth = addDays(monthStart, -15);
+      const longAgo = addMonths(today, -20);
+      const ids = (res: request.Response) => res.body.map((p: { amountPkr: number }) => p.amountPkr);
+
+      beforeAll(async () => {
+        const [m] = await ctx.db.select().from(members).where(eq(members.code, 'IH-0901'));
+        // Older payments (append-only: inserting history is allowed). 12:00 PKT on each day.
+        for (const [day, amount] of [[lastMonth, 1111], [longAgo, 2222]] as const) {
+          await ctx.db.insert(payments).values({
+            gymId: 'gym-a', memberId: m!.userId, amountPkr: amount, method: 'cash', periodFrom: day, periodTo: addMonths(day, 1),
+            recordedBy: a.reception.id, createdAt: new Date(`${day}T07:00:00Z`),
+          });
+        }
+      });
+
+      it('with no dates, lists only this month (Pakistan time)', async () => {
+        const res = await as(receptionA).get('/v1/payments');
+        expect(res.status).toBe(200);
+        expect(ids(res)).not.toContain(1111);
+        expect(ids(res)).not.toContain(2222);
+        expect(res.body.every((p: { createdAt: string }) => p.createdAt >= `${addDays(monthStart, -1)}T19:00:00.000Z`)).toBe(true);
+      });
+
+      it('only "from": up to today; only "to": from the first of that month', async () => {
+        expect(ids(await as(receptionA).get(`/v1/payments?from=${lastMonth}`))).toContain(1111);
+        const toOnly = await as(receptionA).get(`/v1/payments?to=${lastMonth}`);
+        expect(ids(toOnly)).toEqual([1111]);
+      });
+
+      it("?member= with no dates returns that member's full history", async () => {
+        const res = await as(receptionA).get('/v1/payments?member=IH-0901');
+        expect(res.status).toBe(200);
+        expect(ids(res)).toEqual(expect.arrayContaining([1111, 2222]));
+      });
+
+      it('accepts exactly 13 months; refuses a longer range, an open "from" far back, and a backwards range', async () => {
+        const from13 = addMonths(today, -13);
+        expect((await as(receptionA).get(`/v1/payments?from=${from13}&to=${today}`)).status).toBe(200);
+        for (const q of [`from=${addDays(from13, -1)}&to=${today}`, `from=${longAgo}`, `from=${longAgo}&to=${today}&member=IH-0901`]) {
+          const res = await as(receptionA).get(`/v1/payments?${q}`);
+          expect(res.status).toBe(400);
+          expect(res.body).toEqual({ message: RANGE_TOO_LONG });
+        }
+        const back = await as(receptionA).get(`/v1/payments?from=${today}&to=${addDays(today, -1)}`);
+        expect(back.status).toBe(400);
+        expect(back.body).toEqual({ message: RANGE_BACKWARDS });
+      });
     });
   });
 });

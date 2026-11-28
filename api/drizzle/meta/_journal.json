@@ -22,6 +22,34 @@
       "when": 1795560944150,
       "tag": "0002_builtin_exercises",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795644289579,
+      "tag": "0003_optional_registration_payment",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795646704962,
+      "tag": "0004_gym_self_registration",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795819017517,
+      "tag": "0005_due_on_from_joined_on",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795824497289,
+      "tag": "0006_due_on_required",
+      "breakpoints": true
     }
   ]
 }

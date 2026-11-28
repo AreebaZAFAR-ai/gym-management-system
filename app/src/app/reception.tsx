@@ -135,7 +135,7 @@ function Reception() {
                 label={t.reception.typeId}
                 value={typed}
                 onChangeText={setTyped}
-                placeholder={t.reception.idPlaceholder}
+                placeholder={t.reception.idPlaceholder(BRAND.short)}
                 autoCapitalize="characters"
                 autoCorrect={false}
                 returnKeyType="go"

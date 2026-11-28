@@ -1,5 +1,6 @@
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { HTTPS_REQUIRED } from '../src/app.setup';
 import { closeTestApp, createTestApp, type TestContext } from './helpers/app';
 
 describe('app skeleton', () => {
@@ -45,5 +46,27 @@ describe('app skeleton', () => {
     expect(allowed.headers['access-control-allow-origin']).toBe('http://admin.test');
     const other = await request(ctx.app.getHttpServer()).get('/health').set('Origin', 'http://evil.test');
     expect(other.headers['access-control-allow-origin']).toBeUndefined();
+  });
+});
+
+describe('§11 HTTPS only in production', () => {
+  let prod: TestContext;
+
+  beforeAll(async () => {
+    prod = await createTestApp({ NODE_ENV: 'production' });
+  });
+  afterAll(() => closeTestApp(prod));
+
+  it('refuses plain HTTP and accepts HTTPS forwarded by the TLS proxy (with HSTS)', async () => {
+    const plain = await request(prod.app.getHttpServer()).post('/v1/auth/login').send({});
+    expect(plain.status).toBe(403);
+    expect(plain.body).toEqual({ message: HTTPS_REQUIRED });
+    const secure = await request(prod.app.getHttpServer()).post('/v1/auth/login').set('X-Forwarded-Proto', 'https').send({});
+    expect(secure.status).toBe(400);
+    expect(secure.headers['strict-transport-security']).toBe('max-age=31536000');
+  });
+
+  it("keeps /health reachable for the host's health checks", async () => {
+    expect((await request(prod.app.getHttpServer()).get('/health')).status).toBe(200);
   });
 });

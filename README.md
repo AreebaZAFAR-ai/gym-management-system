@@ -9,7 +9,7 @@ gets its own branded member app.
 | Mobile app (members, reception, trainers) | `app/` | Expo (React Native), TypeScript, Expo Router | Built; talks to the API when `API_URL` is set (demo data otherwise) |
 | Shared types and business rules | `shared/` | TypeScript, Vitest | Built and tested |
 | API | `api/` | NestJS, Zod, JWT, bcrypt, PostgreSQL (Neon) + Drizzle | All §10 routes built and tested; Neon migrated |
-| Web admin | `admin/` | Next.js (App Router) | Not started |
+| Web admin | `admin/` | Next.js 16 (App Router), React, TypeScript | Every §6 page built; API client contract-tested against a live API |
 
 ## Quick start
 
@@ -17,6 +17,7 @@ gets its own branded member app.
 npm install
 npm test        # business-rule unit tests (shared/)
 npm run app     # start the Expo app (Node 22.13+ required)
+npm run admin   # start the web admin on http://localhost:3001 (see admin/README.md)
 ```
 
 See [`app/README.md`](app/README.md) for demo accounts, environment variables

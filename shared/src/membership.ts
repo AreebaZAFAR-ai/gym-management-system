@@ -23,6 +23,10 @@ export type EntryDecision =
   | { allowed: false; reason: 'frozen'; message: string }
   | { allowed: false; reason: 'overdue'; message: string; overdueSince: string };
 
+/**
+ * §7 Entry at the door: blocked if frozen; blocked if today is later than due date +
+ * grace days; otherwise allowed.
+ */
 export function entryDecision(
   m: { dueOn: string; frozenUntil: string | null },
   today: string,
@@ -71,7 +75,10 @@ export function firstPaymentPeriod(
   return { periodFrom: paymentDate, periodTo: addMonths(paymentDate, planMonths) };
 }
 
-/** On approval the due date moves later by the days frozen. */
+/**
+ * On approval the due date moves later by the days frozen, and entry is blocked
+ * until the freeze ends.
+ */
 export function applyFreeze(
   dueOn: string,
   days: number,
@@ -79,6 +86,10 @@ export function applyFreeze(
 ): { dueOn: string; frozenUntil: string } {
   return { dueOn: addDays(dueOn, days), frozenUntil: addDays(today, days - 1) };
 }
+
+/** Freeze requests (§4.6, §7): one at a time, and not while already frozen. */
+export const FREEZE_ALREADY_PENDING = 'You already have a freeze request waiting for reception.';
+export const ALREADY_FROZEN = 'Your membership is already frozen.';
 
 export function isValidFreezeDays(days: number): boolean {
   return Number.isInteger(days) && days >= FREEZE_MIN_DAYS && days <= FREEZE_MAX_DAYS;

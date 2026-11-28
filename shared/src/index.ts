@@ -5,3 +5,4 @@ export * from './membership';
 export * from './checkin';
 export * from './training';
 export * from './format';
+export * from './registration';

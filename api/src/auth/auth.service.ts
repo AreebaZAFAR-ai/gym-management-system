@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { normalizePhone, type AuthUser, type LoginResponse } from '@gym/shared';
 import { and, eq } from 'drizzle-orm';
@@ -13,6 +13,8 @@ import { checkPassword, DUMMY_HASH, hashPassword } from './passwords';
 
 /** §4.1 and §11: one error for a wrong phone number or a wrong password. */
 export const WRONG_LOGIN = 'Wrong phone number or password.';
+/** §6 Disable/Enable: shown only after the right password, so it never reveals whether a phone exists. */
+export const ACCOUNT_DISABLED = 'This account is disabled. Please contact reception.';
 export const TOO_MANY_TRIES = 'Too many login attempts. Please try again in 15 minutes.';
 
 const loginBody = z.object({
@@ -45,12 +47,13 @@ export class AuthService {
 
     const [user] = phone
       ? await this.db
-          .select({ id: users.id, passwordHash: users.passwordHash })
+          .select({ id: users.id, passwordHash: users.passwordHash, active: users.active })
           .from(users)
           .where(and(eq(users.gymId, gymId), eq(users.phone, phone)))
       : [];
     const passwordOk = await checkPassword(password, user?.passwordHash ?? DUMMY_HASH);
     if (!user || !passwordOk) throw new UnauthorizedException(WRONG_LOGIN);
+    if (!user.active) throw new ForbiddenException(ACCOUNT_DISABLED);
 
     const payload: TokenPayload = { sub: user.id, gym: gymId };
     const token = await this.jwt.signAsync(payload);

@@ -18,9 +18,12 @@
     "gym:create": "npm run build && node dist/api/src/cli/create-gym.js",
     "gym:demo": "npm run build && node dist/api/src/cli/create-gym.js --demo",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:status": "npm run build --silent && node dist/api/src/cli/db.js status",
+    "db:backup": "npm run build --silent && node dist/api/src/cli/db.js backup",
+    "db:migrate": "npm run build --silent && node dist/api/src/cli/db.js migrate"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1178.0",
     "@gym/shared": "1.0.0",
     "@nestjs/common": "^11.2.11",
     "@nestjs/core": "^11.2.11",
@@ -28,6 +31,7 @@
     "@nestjs/platform-express": "^11.2.11",
     "@noble/hashes": "^2.0.1",
     "bcryptjs": "^3.0.3",
+    "compression": "^1.8.2",
     "drizzle-orm": "^0.45.4",
     "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
@@ -37,6 +41,7 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.6.0",
     "@nestjs/testing": "^11.2.11",
+    "@types/compression": "^1.8.1",
     "@types/express": "^5.0.6",
     "@types/node": "^20.19.0",
     "@types/pg": "^8.23.1",

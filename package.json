@@ -1,11 +1,16 @@
 {
   "name": "gym",
   "private": true,
-  "workspaces": ["app", "shared", "api"],
+  "workspaces": ["app", "shared", "api", "admin"],
   "scripts": {
     "app": "npm --workspace app run start",
     "api": "npm --workspace api run dev",
+    "admin": "npm --workspace admin run dev",
+    "db:generate": "npm --workspace api run db:generate",
+    "db:status": "npm --workspace api run db:status",
+    "db:backup": "npm --workspace api run db:backup",
+    "db:migrate": "npm --workspace api run db:migrate --",
     "test": "npm --workspace shared run test && npm --workspace api run test",
-    "typecheck": "npm --workspace shared run typecheck && npm --workspace api run typecheck && npm --workspace app run typecheck"
+    "typecheck": "npm --workspace shared run typecheck && npm --workspace api run typecheck && npm --workspace app run typecheck && npm --workspace admin run typecheck"
   }
 }

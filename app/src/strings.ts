@@ -195,7 +195,7 @@ export const t = {
     allowCamera: 'Allow camera',
     noPhone: 'No phone?',
     typeId: 'Type member ID',
-    idPlaceholder: 'IH-0412',
+    idPlaceholder: (prefix: string) => `${prefix}-0412`,
     check: 'Check',
     checking: 'Checking…',
     allowed: 'Entry allowed',

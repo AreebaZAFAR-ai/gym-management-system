@@ -54,6 +54,36 @@ export interface ChangePasswordRequest {
   newPassword: string;
 }
 
+// ---------- Gym self-registration (public, web admin) ----------
+
+/**
+ * POST gyms/register. Creates a gym and its first owner account. The role is
+ * always "owner"; any role sent by the client is ignored.
+ */
+export interface RegisterGymRequest {
+  gymName: string;
+  gymEmail: string;
+  /** Any common format; 7 to 15 digits. */
+  gymPhone: string;
+  gymAddress: string;
+  city: string;
+  ownerName: string;
+  ownerEmail: string;
+  /** Pakistani mobile number in any common format; the owner logs in with it. */
+  ownerPhone: string;
+  password: string;
+  confirmPassword: string;
+}
+
+export interface RegisterGymResponse {
+  /** The Gym Code used at login (gyms.id). */
+  gymId: string;
+  gymName: string;
+  ownerName: string;
+  /** 10 digits starting with 3. */
+  ownerPhone: string;
+}
+
 // ---------- Gym brand (public) ----------
 
 export interface PayTo {
@@ -346,8 +376,8 @@ export interface RegisterMemberRequest {
   /** Fee plan. */
   planId: string;
   trainerId?: string | null;
-  /** Registration requires the first membership payment. */
-  payment: { amountPkr: number; method: PaymentMethod; txnId?: string | null };
+  /** §6 "Optional first payment with method". Omit (or null) to register without one. */
+  payment?: { amountPkr: number; method: PaymentMethod; txnId?: string | null } | null;
 }
 
 export interface RegisterMemberResponse {
@@ -355,8 +385,15 @@ export interface RegisterMemberResponse {
   code: string;
   /** Default password (last 6 digits of the mobile number), shown once to reception. */
   temporaryPassword: string;
+  /** From the first payment, or the joining date when registered without one. */
   dueOn: string;
-  payment: Payment;
+  /** The first payment, or null when registered without one (no receipt is queued). */
+  payment: Payment | null;
+}
+
+/** POST members/:code/reset-password: the new password (the §7 default), shown once to reception. */
+export interface ResetPasswordResponse {
+  password: string;
 }
 
 // ---------- Staff screens (web admin and reception) ----------
@@ -460,6 +497,11 @@ export interface UpdateMemberRequest {
   trainerId?: string | null;
   active?: boolean;
   dueOn?: string;
+}
+
+/** POST whatsapp/reminders (§6 "Add fee reminders"): how many reminders were queued. */
+export interface FeeRemindersResponse {
+  queued: number;
 }
 
 /** §6 Fees and payments: approvals. */

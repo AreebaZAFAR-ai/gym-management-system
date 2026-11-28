@@ -22,10 +22,11 @@ export class DashboardService {
     const monthStart = `${today.slice(0, 7)}-01`;
     const list = (await selectMembers(this.db, staff.gymId)).map((m) => toListItem(m, today));
     // §6 lists: "overdue, and due in the next 5 days".
-    const overdue = list.filter((m) => m.status === 'overdue').sort((a, b) => a.dueOn.localeCompare(b.dueOn));
+    const byDue = (a: { dueOn: string }, b: { dueOn: string }) => a.dueOn.localeCompare(b.dueOn);
+    const overdue = list.filter((m) => m.status === 'overdue').sort(byDue);
     const dueSoon = list
       .filter((m) => m.dueOn >= today && m.dueOn <= addDays(today, DUE_SOON_DAYS))
-      .sort((a, b) => a.dueOn.localeCompare(b.dueOn));
+      .sort(byDue);
 
     const [joined] = await this.db.select({ n: sql<number>`count(*)::int` }).from(members)
       .where(and(eq(members.gymId, staff.gymId), gte(members.joinedOn, monthStart)));

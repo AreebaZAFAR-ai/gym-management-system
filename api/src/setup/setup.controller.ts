@@ -5,7 +5,7 @@ import { SetupService } from './setup.service';
 
 /**
  * §10 Brand (public): GET gyms/:id · Shared (any): GET exercises
- * Setup: GET plans (reception, owner) · POST/PATCH plans, GET/POST/PATCH staff, GET/PATCH settings (owner)
+ * Setup: GET plans · GET staff (reception, owner) · POST/PATCH plans, POST/PATCH staff, GET/PATCH settings (owner)
  */
 @Controller()
 export class SetupController {
@@ -40,7 +40,8 @@ export class SetupController {
     return this.setup.updatePlan(user, id, body);
   }
 
-  @Roles('owner')
+  // §10 Setup: "GET plans · GET staff — Reception, owner" (reception picks a trainer at registration).
+  @Roles('reception')
   @Get('staff')
   staff(@CurrentUser() user: Principal): Promise<StaffMember[]> {
     return this.setup.staff(user);

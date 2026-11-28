@@ -1,11 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query } from '@nestjs/common';
-import type { Announcement, WhatsAppMessage } from '@gym/shared';
+import type { Announcement, FeeRemindersResponse, WhatsAppMessage } from '@gym/shared';
 import { CurrentUser, type Principal, Roles } from '../auth/auth.decorators';
 import { MessagesService } from './messages.service';
 
 /**
  * §10 Messages — reception, owner: GET whatsapp?status · PATCH whatsapp/:id ·
- * POST/DELETE announcements. (POST whatsapp/reminders is pending: no reminder wording in the PDF.)
+ * POST whatsapp/reminders · POST/DELETE announcements.
  * §10 Shared — any role: GET announcements.
  */
 @Controller()
@@ -22,6 +22,13 @@ export class MessagesController {
   @Patch('whatsapp/:id')
   setStatus(@CurrentUser() user: Principal, @Param('id') id: string, @Body() body: unknown): Promise<WhatsAppMessage> {
     return this.messages.setStatus(user, id, body);
+  }
+
+  @Roles('reception')
+  @Post('whatsapp/reminders')
+  @HttpCode(200)
+  reminders(@CurrentUser() user: Principal): Promise<FeeRemindersResponse> {
+    return this.messages.queueReminders(user);
   }
 
   @Get('announcements')

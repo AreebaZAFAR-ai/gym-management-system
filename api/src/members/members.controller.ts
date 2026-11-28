@@ -1,12 +1,11 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, Query } from '@nestjs/common';
-import type { MemberDetail, MemberListItem, RegisterMemberResponse } from '@gym/shared';
+import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query } from '@nestjs/common';
+import type { MemberDetail, MemberListItem, RegisterMemberResponse, ResetPasswordResponse } from '@gym/shared';
 import { CurrentUser, type Principal, Roles } from '../auth/auth.decorators';
 import { MembersService } from './members.service';
 
 /**
  * §10 Members — reception, owner (due-date edit: owner):
- *   GET members?q&status · POST members · GET/PATCH members/:code
- *   (POST members/:code/reset-password is pending: the PDF does not say what the new password is.)
+ *   GET members?q&status · POST members · GET/PATCH members/:code · POST members/:code/reset-password
  * "A member account is created only by reception at registration" (§2); the owner may do everything reception can.
  */
 @Roles('reception')
@@ -32,5 +31,11 @@ export class MembersController {
   @Patch(':code')
   update(@CurrentUser() user: Principal, @Param('code') code: string, @Body() body: unknown): Promise<MemberDetail> {
     return this.members.update(user, code, body);
+  }
+
+  @Post(':code/reset-password')
+  @HttpCode(200)
+  resetPassword(@CurrentUser() user: Principal, @Param('code') code: string): Promise<ResetPasswordResponse> {
+    return this.members.resetPassword(user, code);
   }
 }
