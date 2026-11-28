@@ -57,14 +57,15 @@ try {
   const fns = (await q(`select proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' order by 1`)).map((r) => r.proname);
   fns.length === 4 && !fns.includes('check_member_has_payment') ? ok(`4 functions: ${fns.join(', ')}`) : bad('functions', fns.join(', '));
   const migrations = await q(`select count(*)::int n from drizzle.__drizzle_migrations`);
-  migrations[0].n === 5 ? ok('5 migrations recorded') : bad('migrations recorded', String(migrations[0].n));
+  migrations[0].n === 7 ? ok('7 migrations recorded') : bad('migrations recorded', String(migrations[0].n));
   // 0004 gym self-registration: contact columns and case-insensitive unique emails.
   const regCols = (await q(`select table_name || '.' || column_name c from information_schema.columns where table_schema='public' and ((table_name='gyms' and column_name in ('email','phone','address')) or (table_name='users' and column_name='email')) order by 1`)).map((r) => r.c);
   regCols.length === 4 ? ok(`registration columns: ${regCols.join(', ')}`) : bad('registration columns', regCols.join(', '));
   const regIdx = (await q(`select indexname from pg_indexes where schemaname='public' and indexname in ('gyms_email_ci_unique','users_email_ci_unique') order by 1`)).map((r) => r.indexname);
   regIdx.length === 2 ? ok(`unique email indexes: ${regIdx.join(', ')}`) : bad('unique email indexes', regIdx.join(', '));
+  // 0006: every member has a due date (0005 filled in the empty ones first).
   const [{ nullable }] = await q(`select is_nullable = 'YES' as nullable from information_schema.columns where table_schema='public' and table_name='members' and column_name='due_on'`);
-  nullable ? ok('members.due_on allows no due date (optional first payment)') : bad('members.due_on is still NOT NULL');
+  !nullable ? ok('members.due_on is required (NOT NULL)') : bad('members.due_on still allows no due date');
   const [{ n: builtIn }] = await q(`select count(*)::int n from exercises where gym_id is null`);
   builtIn === 17 ? ok('17 built-in exercises') : bad('built-in exercises', String(builtIn));
   const rows = await q(`select relname, n_live_tup::int n from pg_stat_user_tables where schemaname='public' and relname <> 'exercises' and n_live_tup > 0`);
@@ -84,8 +85,10 @@ try {
   const memberB = await user('verify-b', '3000000002', 'member');
 
   const unpaid = await user('verify-a', '3000000009', 'member');
-  await q(`insert into members (user_id,gym_id,code,plan_id,joined_on,due_on) values ($1,'verify-a','V-9',$2,'2026-11-01',null)`, [unpaid, planA]);
-  ok('member without a first payment (no due date) is accepted');
+  await expectReject('member with no due date is refused (0006)',
+    `insert into members (user_id,gym_id,code,plan_id,joined_on,due_on) values ($1,'verify-a','V-9',$2,'2026-11-01',null)`, [unpaid, planA], /due_on/);
+  await q(`insert into members (user_id,gym_id,code,plan_id,joined_on,due_on) values ($1,'verify-a','V-9',$2,'2026-11-01','2026-11-01')`, [unpaid, planA]);
+  ok('member without a first payment (due from the joining date) is accepted');
 
   await q(`insert into members (user_id,gym_id,code,plan_id,joined_on,due_on) values ($1,'verify-a','V-1',$2,'2026-11-01','2026-12-01')`, [memberA, planA]);
   const pay = (await q(`insert into payments (gym_id,member_id,amount_pkr,method,period_from,period_to,recorded_by) values ('verify-a',$1,4000,'cash','2026-11-01','2026-12-01',$2) returning id`, [memberA, recA]))[0].id;

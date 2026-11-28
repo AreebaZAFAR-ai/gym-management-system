@@ -87,7 +87,7 @@ export function RecordPaymentDialog({
                     </div>
                   </div>
                   <div className="row">
-                    {member.dueOn ? <span className="small muted">{t.payment.dueNow(formatShortDate(member.dueOn))}</span> : null}
+                    <span className="small muted">{t.payment.dueNow(formatShortDate(member.dueOn))}</span>
                     <StatusPill status={member.status} />
                   </div>
                 </div>

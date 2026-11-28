@@ -2,7 +2,7 @@
 
 import type { MemberListItem } from '@gym/shared';
 import { useRouter } from 'next/navigation';
-import { formatDue, formatPKR, formatPhone } from '@/lib/format';
+import { formatPKR, formatPhone, formatShortDate } from '@/lib/format';
 import { t } from '@/lib/strings';
 import { Empty, StatusPill } from './ui';
 
@@ -43,7 +43,7 @@ export function MemberTable({ members, empty }: { members: MemberListItem[]; emp
                 {m.planTiming ? <div className="cell-sub">{m.planTiming}</div> : null}
               </td>
               <td className="num">{formatPKR(m.feePkr)}</td>
-              <td className="mono">{formatDue(m.dueOn)}</td>
+              <td className="mono">{formatShortDate(m.dueOn)}</td>
               <td>
                 <div className="row" style={{ gap: 6 }}>
                   <StatusPill status={m.status} />

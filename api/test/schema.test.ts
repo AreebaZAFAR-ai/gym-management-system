@@ -133,12 +133,17 @@ describe('database schema (migrations applied to PGlite)', () => {
     expect(await dbError(() => registerA('GA-0001'))).toMatch(/members_gym_code_unique/);
   });
 
-  describe('§6 Add member: optional first payment (migration 0003)', () => {
-    it('accepts a member saved without a payment and with no due date', async () => {
+  describe('§6 Add member: optional first payment (migration 0003); due date required (0006)', () => {
+    it('accepts a member saved without a payment; their due date is required', async () => {
       const userId = (await db.insert(users).values({ gymId: 'gym-a', phone: nextPhone(), name: 'No pay', role: 'member', passwordHash: 'x' }).returning())[0]!.id;
-      await db.insert(members).values({ userId, gymId: 'gym-a', code: 'GA-0900', planId: ids.aPlan, joinedOn: '2026-11-25', dueOn: null });
+      // 0006: members.due_on is NOT NULL (raw SQL, since the typed schema no longer allows null).
+      expect(await dbError(() => pglite.query(
+        `insert into members (user_id, gym_id, code, plan_id, joined_on, due_on) values ($1, 'gym-a', 'GA-0900', $2, '2026-11-25', null)`,
+        [userId, ids.aPlan],
+      ))).toMatch(/due_on|not-null|null value/i);
+      await db.insert(members).values({ userId, gymId: 'gym-a', code: 'GA-0900', planId: ids.aPlan, joinedOn: '2026-11-25', dueOn: '2026-11-25' });
       const [m] = await db.select().from(members).where(eq(members.userId, userId));
-      expect(m?.dueOn).toBeNull();
+      expect(m?.dueOn).toBe('2026-11-25');
       expect(await db.select().from(payments).where(eq(payments.memberId, userId))).toHaveLength(0);
     });
 

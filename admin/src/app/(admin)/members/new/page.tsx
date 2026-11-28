@@ -261,7 +261,7 @@ function Done({ result, onAnother }: { result: RegisterMemberResponse; onAnother
       <p className="small muted" style={{ margin: 0 }}>
         {t.addMember.donePasswordHint}
       </p>
-      {result.payment && result.dueOn ? (
+      {result.payment ? (
         <dl className="kv">
           <dt>{t.addMember.doneDue}</dt>
           <dd>{formatShortDate(result.dueOn)}</dd>

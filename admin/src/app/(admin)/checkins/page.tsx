@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { PaymentForm } from '@/components/PaymentForm';
 import { Empty, ErrorBox, Loading, PageHead } from '@/components/ui';
-import { formatDue, formatPKR, formatPhone, formatPkTime, formatShortDate } from '@/lib/format';
+import { formatPKR, formatPhone, formatPkTime, formatShortDate } from '@/lib/format';
 import { useAction, useLoad } from '@/lib/hooks';
 import { useSession } from '@/lib/session';
 import { t } from '@/lib/strings';
@@ -189,7 +189,7 @@ function ScanResultCard({
           <dt>{t.common.phone}</dt>
           <dd className="mono">{formatPhone(m.phone)}</dd>
           <dt>{t.member.due}</dt>
-          <dd>{formatDue(renewed?.newDueOn ?? m.dueOn)}</dd>
+          <dd>{formatShortDate(renewed?.newDueOn ?? m.dueOn)}</dd>
         </dl>
       </div>
       {!result.allowed && !renewed ? (

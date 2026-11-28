@@ -187,8 +187,7 @@ function ResultCard({
         </Row>
         <Txt>{m.planName}</Txt>
         <Txt variant="small">
-          {formatPhone(m.phone)}
-          {m.dueOn ? ` · ${t.reception.dueOn(formatShortDate(m.dueOn))}` : ''}
+          {formatPhone(m.phone)} · {t.reception.dueOn(formatShortDate(m.dueOn))}
         </Txt>
       </Card>
 

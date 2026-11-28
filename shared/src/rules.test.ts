@@ -97,10 +97,6 @@ describe('membership status', () => {
   it('overdue when due date passed', () => expect(membershipStatus('2026-11-23', null, today)).toBe('overdue'));
   it('due soon within 5 days', () => expect(membershipStatus('2026-11-29', null, today)).toBe('due_soon'));
   it('active otherwise', () => expect(membershipStatus('2026-11-30', null, today)).toBe('active'));
-  it('no due date (no payment yet): the overdue and due-soon tests do not apply', () => {
-    expect(membershipStatus(null, null, today)).toBe('active');
-    expect(membershipStatus(null, '2026-11-30', today)).toBe('frozen');
-  });
 });
 
 describe('entry at the door', () => {
@@ -115,10 +111,6 @@ describe('entry at the door', () => {
       allowed: false,
       message: 'Membership frozen until 2 Dec',
     }));
-  it('no due date: only the frozen rule can block', () => {
-    expect(entryDecision({ dueOn: null, frozenUntil: null }, '2026-11-24', 3)).toEqual({ allowed: true });
-    expect(entryDecision({ dueOn: null, frozenUntil: '2026-11-30' }, '2026-11-24', 3)).toMatchObject({ allowed: false, reason: 'frozen' });
-  });
 });
 
 describe('payments and freeze', () => {
@@ -136,10 +128,6 @@ describe('payments and freeze', () => {
   });
   it('7-day freeze moves due date 7 days', () =>
     expect(applyFreeze('2026-12-10', 7, '2026-11-24')).toEqual({ dueOn: '2026-12-17', frozenUntil: '2026-11-30' }));
-  it('no due date: the first payment starts on the payment date; a freeze has no due date to move', () => {
-    expect(paymentPeriod(null, 1, '2026-01-31')).toEqual({ periodFrom: '2026-01-31', periodTo: '2026-02-28' });
-    expect(applyFreeze(null, 7, '2026-11-24')).toEqual({ dueOn: null, frozenUntil: '2026-11-30' });
-  });
   it('member codes', () => expect(memberCode('IH', 419)).toBe('IH-0419'));
 });
 

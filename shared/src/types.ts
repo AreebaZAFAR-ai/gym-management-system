@@ -116,8 +116,7 @@ export interface Membership {
   planTiming: string | null;
   feePkr: number;
   planMonths: number;
-  /** Null until the first membership payment is recorded (§6 optional first payment). */
-  dueOn: string | null;
+  dueOn: string;
   frozenUntil: string | null;
   status: MembershipStatus;
   /** Whether the member may enter today (status + grace days). */
@@ -319,8 +318,7 @@ export interface ScanMember {
   planName: string;
   planId: string;
   feePkr: number;
-  /** Null until the first membership payment is recorded. */
-  dueOn: string | null;
+  dueOn: string;
   frozenUntil: string | null;
   status: MembershipStatus;
 }
@@ -387,8 +385,8 @@ export interface RegisterMemberResponse {
   code: string;
   /** Default password (last 6 digits of the mobile number), shown once to reception. */
   temporaryPassword: string;
-  /** From the first payment; null when registered without one. */
-  dueOn: string | null;
+  /** From the first payment, or the joining date when registered without one. */
+  dueOn: string;
   /** The first payment, or null when registered without one (no receipt is queued). */
   payment: Payment | null;
 }
@@ -428,8 +426,7 @@ export interface MemberListItem {
   planName: string;
   planTiming: string | null;
   feePkr: number;
-  /** Null until the first membership payment is recorded. */
-  dueOn: string | null;
+  dueOn: string;
   frozenUntil: string | null;
   status: MembershipStatus;
   /** Account enabled (Disable/Enable on the member page). */
@@ -466,8 +463,7 @@ export interface WhatsAppMessage {
 
 export interface DueDateChange {
   id: string;
-  /** Null when the member had no due date yet. */
-  oldDueOn: string | null;
+  oldDueOn: string;
   newDueOn: string;
   changedBy: string;
   createdAt: string;
@@ -536,10 +532,9 @@ export interface FreezeRequestItem {
   reason: FreezeReason;
   status: RequestStatus;
   createdAt: string;
-  /** Null when the member has no due date yet (no payment recorded). */
-  dueOn: string | null;
-  /** Due date if approved today; null when there is no due date to move. */
-  newDueOn: string | null;
+  dueOn: string;
+  /** Due date if approved today. */
+  newDueOn: string;
 }
 
 /** §6 Overview. */

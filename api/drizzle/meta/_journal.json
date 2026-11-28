@@ -43,6 +43,13 @@
       "when": 1795819017517,
       "tag": "0005_due_on_from_joined_on",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795824497289,
+      "tag": "0006_due_on_required",
+      "breakpoints": true
     }
   ]
 }

@@ -6,7 +6,6 @@ const PK_OFFSET_MS = 5 * 60 * 60 * 1000;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** A due date as "25 Nov", or "—" when there is none yet (registered without a first payment). */
-export const formatDue = (date: string | null) => (date ? formatShortDate(date) : '—');
 
 /** Pakistan business date of an ISO timestamp, "YYYY-MM-DD". */
 export const pkDateOf = (iso: string) => pkToday(new Date(iso));

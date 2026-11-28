@@ -217,12 +217,11 @@ export const members = pgTable(
     trainerId: uuid('trainer_id'),
     joinedOn: day('joined_on').notNull(),
     /**
-     * Set by membership payments (§7 Recording a payment). Null for a member
-     * registered without a first payment (§6 Add member: "Optional first payment"):
-     * the PDF gives no due date until one is recorded. 0003 removed the 0001
-     * trigger that required a payment at registration.
+     * Set by membership payments (§7 Recording a payment). A member registered
+     * without a first payment is due from the joining date (§1: overdue members are
+     * blocked at the door). Required since 0006; 0005 filled in older empty ones.
      */
-    dueOn: day('due_on'),
+    dueOn: day('due_on').notNull(),
     frozenUntil: day('frozen_until'),
     goal: goalEnum('goal'),
     gender: genderEnum('gender'),

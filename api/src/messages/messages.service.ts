@@ -74,10 +74,9 @@ export class MessagesService {
       let queued = 0;
       for (const m of await selectMembers(tx, staff.gymId)) {
         if (remindedRecently.has(m.memberId)) continue;
-        // Frozen members get no reminder (§7 status order checks Frozen first). A member with
-        // no payment recorded has no due date, so is neither overdue nor due within 3 days.
+        // Frozen members get no reminder (§7 status order checks Frozen first).
         const status = toListItem(m, today).status;
-        if (status === 'frozen' || m.dueOn === null) continue;
+        if (status === 'frozen') continue;
         const overdue = status === 'overdue';
         const dueSoon = m.dueOn >= today && m.dueOn <= dueBy;
         if (!overdue && !dueSoon) continue;

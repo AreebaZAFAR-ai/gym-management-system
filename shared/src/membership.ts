@@ -6,20 +6,15 @@ export const DEFAULT_GRACE_DAYS = 3;
 export const FREEZE_MIN_DAYS = 3;
 export const FREEZE_MAX_DAYS = 15;
 
-/**
- * Spec §7, checked in this order: frozen, overdue, due soon, active.
- * `dueOn` is null for a member registered without a first payment (§6 "Optional
- * first payment"). The §7 overdue and due-soon tests compare the due date, so with
- * no due date neither applies and the list falls through to "Active: otherwise".
- */
+/** Spec §7, checked in this order: frozen, overdue, due soon, active. */
 export function membershipStatus(
-  dueOn: string | null,
+  dueOn: string,
   frozenUntil: string | null,
   today: string,
 ): MembershipStatus {
   if (frozenUntil && today <= frozenUntil) return 'frozen';
-  if (dueOn !== null && dueOn < today) return 'overdue';
-  if (dueOn !== null && daysBetween(today, dueOn) <= DUE_SOON_DAYS) return 'due_soon';
+  if (dueOn < today) return 'overdue';
+  if (daysBetween(today, dueOn) <= DUE_SOON_DAYS) return 'due_soon';
   return 'active';
 }
 
@@ -30,11 +25,10 @@ export type EntryDecision =
 
 /**
  * §7 Entry at the door: blocked if frozen; blocked if today is later than due date +
- * grace days; otherwise allowed. With no due date (no payment recorded yet) the
- * second test has nothing to compare, so only the frozen rule can block.
+ * grace days; otherwise allowed.
  */
 export function entryDecision(
-  m: { dueOn: string | null; frozenUntil: string | null },
+  m: { dueOn: string; frozenUntil: string | null },
   today: string,
   graceDays: number = DEFAULT_GRACE_DAYS,
 ): EntryDecision {
@@ -45,7 +39,7 @@ export function entryDecision(
       message: `Membership frozen until ${formatShortDate(m.frozenUntil)}`,
     };
   }
-  if (m.dueOn !== null && today > addDays(m.dueOn, graceDays)) {
+  if (today > addDays(m.dueOn, graceDays)) {
     return {
       allowed: false,
       reason: 'overdue',
@@ -59,16 +53,12 @@ export function entryDecision(
 /**
  * Paying early extends from the current due date; paying after the due date
  * starts from today. Returns the period covered.
- * With no current due date (first payment after registering without one) there is
- * nothing to extend, so the period starts on the payment date, as the first
- * payment at registration does (firstPaymentPeriod).
  */
 export function paymentPeriod(
-  dueOn: string | null,
+  dueOn: string,
   planMonths: number,
   today: string,
 ): { periodFrom: string; periodTo: string } {
-  if (dueOn === null) return firstPaymentPeriod(planMonths, today);
   const periodFrom = dueOn >= today ? dueOn : today;
   return { periodFrom, periodTo: addMonths(periodFrom, planMonths) };
 }
@@ -87,14 +77,14 @@ export function firstPaymentPeriod(
 
 /**
  * On approval the due date moves later by the days frozen, and entry is blocked
- * until the freeze ends. With no due date there is nothing to move.
+ * until the freeze ends.
  */
-export function applyFreeze<D extends string | null>(
-  dueOn: D,
+export function applyFreeze(
+  dueOn: string,
   days: number,
   today: string,
-): { dueOn: D; frozenUntil: string } {
-  return { dueOn: (dueOn === null ? null : addDays(dueOn, days)) as D, frozenUntil: addDays(today, days - 1) };
+): { dueOn: string; frozenUntil: string } {
+  return { dueOn: addDays(dueOn, days), frozenUntil: addDays(today, days - 1) };
 }
 
 /** Freeze requests (§4.6, §7): one at a time, and not while already frozen. */

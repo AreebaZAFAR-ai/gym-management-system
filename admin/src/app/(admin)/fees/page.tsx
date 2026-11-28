@@ -13,7 +13,6 @@ import { METHODS, methodOptions } from '@/components/PaymentForm';
 import { useDesk } from '@/components/Shell';
 import { Confirm, Empty, ErrorBox, Field, FormError, Loading, PageHead, Segmented } from '@/components/ui';
 import {
-  formatDue,
   formatPKR,
   formatPkDateTime,
   formatShortDate,
@@ -352,8 +351,8 @@ function FreezeRow({ freeze: f, onDone }: { freeze: FreezeRequestItem; onDone: (
       <td>
         {t.fees.days(f.days)} · {t.labels.freezeReason[f.reason]}
       </td>
-      <td className="mono">{formatDue(f.dueOn)}</td>
-      <td className="mono">{formatDue(f.newDueOn)}</td>
+      <td className="mono">{formatShortDate(f.dueOn)}</td>
+      <td className="mono">{formatShortDate(f.newDueOn)}</td>
       <td>
         <div className="row" style={{ justifyContent: 'flex-end' }}>
           <button type="button" className="btn small success" disabled={busy} onClick={approve}>

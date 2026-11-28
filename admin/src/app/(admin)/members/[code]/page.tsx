@@ -8,7 +8,6 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { useDesk } from '@/components/Shell';
 import { Confirm, CopyButton, Dialog, Empty, ErrorBox, Field, FormError, Loading, PageHead, StatusPill } from '@/components/ui';
 import {
-  formatDue,
   formatLongDate,
   formatPKR,
   formatPhone,
@@ -121,7 +120,7 @@ export default function MemberPage() {
           </div>
           <div className={`card stat${m.status === 'overdue' ? ' danger' : ''}`}>
             <div className="stat-label">{t.member.due}</div>
-            <div className="stat-value">{formatDue(m.dueOn)}</div>
+            <div className="stat-value">{formatShortDate(m.dueOn)}</div>
             {m.frozenUntil ? <div className="stat-sub muted">{`${t.labels.status.frozen} → ${formatShortDate(m.frozenUntil)}`}</div> : null}
           </div>
           <div className="card stat">
@@ -163,7 +162,7 @@ export default function MemberPage() {
                 <ul style={{ margin: 0, paddingLeft: 18 }}>
                   {m.dueDateChanges.map((c) => (
                     <li key={c.id} className="small">
-                      {formatDue(c.oldDueOn)} → {formatShortDate(c.newDueOn)} · {formatPkDateTime(c.createdAt)}{' '}
+                      {formatShortDate(c.oldDueOn)} → {formatShortDate(c.newDueOn)} · {formatPkDateTime(c.createdAt)}{' '}
                       {t.member.changedBy(names.get(c.changedBy) ?? '—')}
                     </li>
                   ))}
@@ -352,7 +351,7 @@ function EditMember({
   const [notes, setNotes] = useState(m.notes ?? '');
   const [planId, setPlanId] = useState(m.planId);
   const [trainerId, setTrainerId] = useState(m.trainerId ?? '');
-  const [dueOn, setDueOn] = useState(m.dueOn ?? '');
+  const [dueOn, setDueOn] = useState(m.dueOn);
   const { busy, error, setError, run } = useAction();
 
   // Hidden plans stay on existing members (§6), so the member's own plan is always listed.
